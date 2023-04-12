@@ -7,6 +7,15 @@ import torch.nn.functional as F
 from functools import partial
 
 
+class QuickGELU(nn.Module):
+    """
+    Copied from CLIP source code: https://github.com/openai/CLIP/blob/a9b1bf5920416aaeaec965c25dd9e8f98c864f16/clip/model.py#L166
+    """
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x * torch.sigmoid(1.702 * x)
+
+
 class ConvNormGELULayer(nn.Sequential):
     def __init__(
         self,
@@ -29,7 +38,7 @@ class ConvNormGELULayer(nn.Sequential):
         )
         # GroupNorm with num_groups=1 is the same as LayerNorm but works for 2D data
         self.norm = nn.GroupNorm(num_groups=1, num_channels=out_channels)
-        self.act = nn.GELU()
+        self.act = QuickGELU()
 
 
 Conv2DNormGELULayer = ConvNormGELULayer

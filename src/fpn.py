@@ -3,16 +3,16 @@ from typing import Optional, List, Callable, Any, Tuple
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
-from common import Conv2DNormGELULayer, ConvTranspose2dNormGELULayer
+from .nn.common import Conv2DNormGELULayer, ConvTranspose2dNormGELULayer
+from .types import Neck
 
-
-class SimpleFPN(nn.Module):
+class SimpleFPN(Neck):
     def __init__(
         self,
         in_channels: int = 768,
         out_channels: Tuple[int] = (256, 256, 256, 256),
         strides: Tuple[int] = (4, 8, 16, 32),
-        target_stride: int = 16,
+        target_stride: int = 16
     ):
         super().__init__()
         self.down_4 = nn.Sequential(
@@ -33,25 +33,22 @@ class SimpleFPN(nn.Module):
             Conv2DNormGELULayer(out_channels[3], out_channels[3], kernel_size=1),
         )
 
-        self.init_weights()
-
-    def init_weights(self):
-        pass
-
-    def forward(self, x: Tensor) -> List[Tensor]:
-        x_down_4 = self.down_4(x)
-        x_down_8 = self.down_8(x)
-        x_down_16 = self.down_16(x)
-        x_down_32 = self.down_32(x)
+    def forward(self, features: List[Tensor]) -> List[Tensor]:
+        # simple neck only uses the last one
+        feature = features[-1]
+        x_down_4 = self.down_4(feature)
+        x_down_8 = self.down_8(feature)
+        x_down_16 = self.down_16(feature)
+        x_down_32 = self.down_32(feature)
 
         return [x_down_4, x_down_8, x_down_16, x_down_32]
 
 
 if __name__ == "__main__":
     from torchinfo import summary
-
+    # using always the first feature
     fpn = SimpleFPN()
     summary(fpn, input_size=(1, 768, 40, 40))
-    outs = fpn(torch.randn((1, 768, 40, 40)))
+    outs = fpn([torch.randn((1, 768, 40, 40))])
     print(fpn)
     print([f.shape for f in outs])

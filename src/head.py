@@ -1,11 +1,11 @@
-from typing import Optional, List, Callable, Any
+from typing import List, Callable, Any, Tuple
 
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
 
-from functools import partial
-from common import ConvNormGELULayer
+from .nn.common import ConvNormGELULayer
+import math
 
 
 class ScaleLayer(nn.Module):
@@ -45,15 +45,15 @@ class Head(nn.Module):
         self,
         in_channels: int,
         channels: int,
+        num_classes: int,
         depth: int = 2,
-        features_stride: List[int] = (8, 16, 32, 64, 128),
-        num_classes: int = 80,
+        features_stride: List[int] = (4, 8, 16, 32),
+        prior_prob: float = 0.01,
     ):
         super().__init__()
-        num_levels = len(features_stride)
         self.features_stride = features_stride
         self.scales = nn.ModuleList(
-            [ScaleLayer(init_value=1.0) for _ in range(num_levels)]
+            [ScaleLayer(init_value=1.0) for _ in features_stride]
         )
         self.num_classes = num_classes
         self.in_channels = in_channels
@@ -74,28 +74,34 @@ class Head(nn.Module):
             channels, 4, kernel_size=3, stride=1, padding=1
         )
 
-        # # Init parameters.
-        # prior_prob = cfg.MODEL.OneNet.PRIOR_PROB
-        # self.bias_value = -math.log((1 - prior_prob) / prior_prob)
-        # self._reset_parameters()
+        # [TODO] should be using prior prob here
+    #     self.init_weights(prior_prob)
 
-    def init_parameters(self):
-        # init all parameters.
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
+    # def init_weights(self):
+    #     # init all parameters.
+    #     for p in self.parameters():
+    #         if p.dim() > 1:
+    #             nn.init.xavier_uniform_(p)
 
-        # initialize the bias for focal loss.
-        nn.init.constant_(self.class_predictor.bias, self.bias_value)
+    #     # initialize the bias for focal loss.
+    #     nn.init.constant_(self.cls_score.bias, -math.log((1 - prior_prob) / prior_prob))
 
-    def forward(self, features: List[int]):
+    def forward(self, features: List[Tensor]) -> Tuple[Tensor]:
+        """
+
+        Args:
+            features (List[Tensor] of shape `(batch_size, channels, height, width)`): List of features the head uses
+
+        Returns:
+            Tuple[Tensor]: Tuple of Tensors of shape (`batch_size, num_queries, num_classes`) and (`batch_size, num_queries, 4)` representing the class logits and the predicted bboxes respectively. The predicted bboxes are explicit xyxy coordinates with respect of the original image
+        """
         class_logits_all: List[Tensor] = []
         bboxes_predictions_all: List[Tensor] = []
+        batch_size = features[0].shape[0]
 
         for feature, feature_stride, scale in zip(
             features, self.features_stride, self.scales
         ):
-            batch_size = feature.shape[0]
             # classes
             class_features = self.class_prediction_branch(feature)
             class_logits = self.class_predictor(class_features).view(
@@ -103,25 +109,31 @@ class Head(nn.Module):
             )
             # bboxes
             regression_features = self.regression_prediction_branch(feature)
-            center_points = self.get_center_points_on_grid(feature, feature_stride)[
+            locations_on_grid = self.get_locations_on_grid(feature, feature_stride)[
                 None
             ]
-            # bboxes here are center points, so the coodinares are (cx,cy,h,w)
+            # bboxes here are center points for each cell, so the coodinares are (cx,cy,h,w)
             bboxes_predictions = self.bboxes_predictor(regression_features)
             # rescale bboxes by a learnable parameter
             bboxes_predictions = scale(bboxes_predictions)
-            # rescale bboxes based on the level stride
+            # rescale bboxes based on the level stride and force them to be [0,1]
             bboxes_predictions = F.relu(bboxes_predictions) * feature_stride
+            # now the use locations_on_grid to get back the bboxes location on the image
             bboxes_predictions = self.to_xyxy_bboxes(
-                center_points, bboxes_predictions
+                locations_on_grid, bboxes_predictions
             ).view(batch_size, 4, -1)
 
             class_logits_all.append(class_logits)
             bboxes_predictions_all.append(bboxes_predictions)
 
-        return torch.cat(class_logits_all, dim=-1), torch.cat(
-            bboxes_predictions_all, dim=-1
+        class_logits_all = (
+            torch.cat(class_logits_all, dim=-1).permute(0, 2, 1).contiguous()
         )
+        bboxes_predictions_all = (
+            torch.cat(bboxes_predictions_all, dim=-1).permute(0, 2, 1).contiguous()
+        )
+
+        return class_logits_all, bboxes_predictions_all
 
     def to_xyxy_bboxes(self, locations, pred_ltrb):
         """
@@ -138,7 +150,7 @@ class Head(nn.Module):
         return pred_boxes
 
     @torch.no_grad()
-    def get_center_points_on_grid(self, features: Tensor, stride: int) -> Tensor:
+    def get_locations_on_grid(self, features: Tensor, stride: int) -> Tensor:
         """
         This code essentially computes the (x, y) coordinates of the center points of evenly spaced cells in a grid, given the height and width of the grid and the stride between the cells.
 
@@ -157,18 +169,18 @@ class Head(nn.Module):
         shift_y, shift_x = torch.meshgrid(shifts_y, shifts_x)
         shift_x = shift_x.reshape(-1)
         shift_y = shift_y.reshape(-1)
-        center_points = torch.stack((shift_x, shift_y), dim=1) + stride // 2
+        locations_on_grid = torch.stack((shift_x, shift_y), dim=1) + stride // 2
 
-        center_points = center_points.reshape(h, w, 2).permute(2, 0, 1)
+        locations_on_grid = locations_on_grid.reshape(h, w, 2).permute(2, 0, 1)
 
-        return center_points
+        return locations_on_grid
 
 
 if __name__ == "__main__":
     # layers = StackedConv2dLayers(32, 64)
     # print(layers)
 
-    head = Head(256, channels=256)
+    head = Head(256, channels=256, num_classes=80)
     outs = head(
         [
             torch.randn((1, 256, 80, 80)),

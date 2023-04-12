@@ -1,116 +1,40 @@
-from utils import profile_on_cuda
-from torch import nn
+from src.head import Head
+from src.loss import OneNetLoss
 import torch
-import numpy as np
-from time import perf_counter
+from src.matcher import MinCostMatcher
+from src.fpn import SimpleFPN
+from src.vit import CLIPViT
+from einops import rearrange
 
-# @profile_on_cuda
-
-from scipy.optimize import linear_sum_assignment
-
-import torch
-
-import torch
-
-# Load the shared library
-torch.ops.load_library("my_kernel.so")
-
-# Wrap the CUDA kernel in a Python function
-def hungarian(x):
-    # assert x.is_cuda and x.dtype == torch.float32, "Input tensor must be a float32 CUDA tensor"
-    # N = x.numel()
-    # threads_per_block = 256
-    # blocks_per_grid = (N + threads_per_block - 1) // threads_per_block
-
-    # Call the custom CUDA kernel
-    torch.ops.my_namespace.Hungarian_Algorithm(x)
+backbone = CLIPViT(224, patch_size=16, width=768, layers=4, heads=8, output_dim=512)
+fpn = SimpleFPN(in_channels=768)
+head = Head(256, channels=256, num_classes=2)
+criterion = OneNetLoss(num_classes=2, matcher=MinCostMatcher())
 
 
-@torch.no_grad()
-def sinkhorn_knopp(cost_matrix, epsilon=0.01, max_iter=1000, tau=1e-3):
-    n, m = cost_matrix.shape
-    assert n == m, "Cost matrix must be square"
+class_labels = torch.tensor(
+    [
+        [1, 0],
+        [0, 0],
+    ]
+)
+boxes_labels = torch.tensor(
+    [
+        [
+            [0.1, 0.1, 0.3, 0.3],
+            [0.2, 0.2, 0.4, 0.4],
+        ],
+        [[0.1, 0.1, 0.3, 0.3], [0, 0, 0, 0]],  # pad
+    ]
+)
+mask_labels = torch.tensor([[1, 1], [1, 0]], dtype=torch.bool)
+print(class_labels.shape, boxes_labels.shape)
 
-    K = torch.exp(-cost_matrix / epsilon)
-    u = torch.ones(n, device=cost_matrix.device) / n
-    v = torch.ones(m, device=cost_matrix.device) / m
+features = backbone(torch.randn((2, 3, 224, 224)))
+print(features[0].shape)
+features = [rearrange(f, "b (h w) d -> b d h w", h=224//16, w=224//16) for f in features]
+pyramids = fpn(features)
+outs = head(pyramids)
+losses = criterion(*outs, class_labels, boxes_labels, mask_labels)
 
-    u_prev = torch.empty(n, device=cost_matrix.device)
-    v_prev = torch.empty(m, device=cost_matrix.device)
-
-    for _ in range(max_iter):
-        u_prev.copy_(u)
-        v_prev.copy_(v)
-
-        u.reciprocal_()
-        torch.matmul(K, v, out=u)
-        u.reciprocal_()
-
-        v.reciprocal_()
-        torch.matmul(K.t(), u, out=v)
-        v.reciprocal_()
-
-        if (
-            torch.max(torch.abs(u - u_prev)) < tau
-            and torch.max(torch.abs(v - v_prev)) < tau
-        ):
-            break
-
-    P = torch.diag(u) @ K @ torch.diag(v)
-
-    row_assignments = torch.argmax(P, dim=1)
-    col_assignments = torch.argmax(P, dim=0)
-
-    return row_assignments, col_assignments
-
-
-def optimal_transport(M, lam=0.01, epsilon=1e-8, max_iter=1000):
-    n, m = M.shape
-    # Kinit = torch.exp(- M * lam)
-    K = torch.exp(-M / epsilon)
-    # somehow faster
-    u = torch.ones(n, device=M.device) / n
-    v = torch.ones(m, device=M.device) / m
-    i = 0
-    u_prev = torch.empty(n, device=M.device)
-    v_prev = v.clone()
-
-    while (torch.abs(v - v_prev).sum() > epsilon) or i > max_iter:
-        u_prev.copy_(u)
-        v_prev.copy_(v)
-        # changing order affects convergence a little bit
-        u.reciprocal_()
-        torch.matmul(K, v, out=u)
-        u.reciprocal_()
-
-        v.reciprocal_()
-        torch.matmul(K.t(), u, out=v)
-        v.reciprocal_()
-        i += 1
-
-    print(i)
-    P = torch.diag(u) @ K @ torch.diag(v)
-
-    row_assignments = torch.argmax(P, dim=1)
-    col_assignments = torch.argmax(P, dim=0)
-
-    return row_assignments, col_assignments
-
-
-# start = perf_counter()
-C = np.random.rand(8500, 100)
-# linear_sum_assignment(C)
-
-# print(f"Took {perf_counter() - start:.2f}")
-
-# with torch.autocast("cuda", torch.float16):
-C = torch.from_numpy(C).float()
-start = perf_counter()
-hungarian(C)
-# optimal_transport(C)
-print(f"Took {perf_counter() - start:.2f}")
-
-
-# C = torch.from_numpy(C).float().cuda()
-
-# profile_on_cuda(lambda: sinkhorn_knopp(C))
+print(losses)
