@@ -54,7 +54,7 @@ class ResidualAttentionBlock(nn.Module):
 
     def forward(self, x: torch.Tensor):
         x = x + self.drop_path(self.attention(self.ln_1(x)))
-        x = x + self.mlp(self.ln_2(x))
+        x = x + self.drop_path(self.mlp(self.ln_2(x)))
         return x
 
 
