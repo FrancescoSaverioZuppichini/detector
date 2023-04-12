@@ -75,6 +75,7 @@ class Head(nn.Module):
         )
 
         # [TODO] should be using prior prob here
+
     #     self.init_weights(prior_prob)
 
     # def init_weights(self):

@@ -8,6 +8,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/16", device=device)
 print(model)
 
+
 def interpolate_pos_encoding(positional_embedding, w, h, patch_size):
     N, dim = positional_embedding.shape
     N -= 1  # remove class emb

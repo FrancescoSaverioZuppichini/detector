@@ -7,9 +7,12 @@ from torch import Tensor
 from typing import Optional, Tuple, List
 
 Indices = List[Tuple[Tensor, Tensor]]
+
+
 class Matcher(nn.Module):
     def forward(self, *args, **kwargs) -> Indices:
         raise NotImplementedError
+
 
 class MinCostMatcher(Matcher):
     def __init__(
@@ -65,9 +68,7 @@ class MinCostMatcher(Matcher):
         # [TODO] we should be able to batch most of this computation
         for i in range(class_labels.shape[0]):
             curr_class_preds = class_preds[i]  # is out_prob
-            curr_boxes_preds = boxes_preds[
-                i
-            ]  # is curr_boxes_preds
+            curr_boxes_preds = boxes_preds[i]  # is curr_boxes_preds
             curr_class_labels = class_labels[i]
             curr_boxes_labels = boxes_labels[i]  # is tgt_bbox
 

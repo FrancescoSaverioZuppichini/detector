@@ -14,6 +14,8 @@ from .types import Backbone
 from torchvision.ops import StochasticDepth
 from .nn.functional import window_partition, window_unpartition
 from einops import rearrange
+
+
 class LayerNorm(nn.LayerNorm):
     """Subclass torch's nn.LayerNorm to handle fp16.
     [EDIT] this shouldn't be needed if we use autocast
@@ -27,12 +29,19 @@ class LayerNorm(nn.LayerNorm):
 
 
 class ResidualAttentionBlock(nn.Module):
-    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, drop_rate: float = .0,  window_size: float = .0):
+    def __init__(
+        self,
+        d_model: int,
+        n_head: int,
+        attn_mask: torch.Tensor = None,
+        drop_rate: float = 0.0,
+        window_size: float = 0.0,
+    ):
         super().__init__()
         self.window_size = window_size
         self.attn = nn.MultiheadAttention(d_model, n_head)
         self.ln_1 = nn.LayerNorm(d_model)
-        self.drop_path = StochasticDepth(drop_rate)
+        self.drop_path = StochasticDepth(drop_rate, mode="batch")
         self.mlp = nn.Sequential(
             OrderedDict(
                 [
@@ -68,8 +77,12 @@ class ResidualAttentionBlock(nn.Module):
 
 class Transformer(nn.Module):
     def __init__(
-        self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None,   drop_path_rate: float = 0.0
-
+        self,
+        width: int,
+        layers: int,
+        heads: int,
+        attn_mask: torch.Tensor = None,
+        drop_path_rate: float = 0.0,
     ):
         super().__init__()
         self.width = width
@@ -77,14 +90,18 @@ class Transformer(nn.Module):
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, layers)]
 
         self.resblocks = nn.Sequential(
-            *[ResidualAttentionBlock(width, heads, attn_mask, drop_rate=dpr[i]) for i in range(layers)]
+            *[
+                ResidualAttentionBlock(width, heads, attn_mask, drop_rate=dpr[i])
+                for i in range(layers)
+            ]
         )
 
     def forward(self, x: torch.Tensor):
         return self.resblocks(x)
 
+
 # modied CLIP ViT to follow our Backbone Interface
-class CLIPViT(Backbone):
+class ViT(Backbone):
     def __init__(
         self,
         input_resolution: int,
@@ -93,10 +110,11 @@ class CLIPViT(Backbone):
         layers: int,
         heads: int,
         output_dim: int,
-        drop_path_rate: float = 0.0
+        drop_path_rate: float = 0.0,
     ):
         super().__init__()
         self.input_resolution = input_resolution
+        self.patch_size = patch_size
         self.output_dim = output_dim
         self.conv1 = nn.Conv2d(
             in_channels=3,
@@ -117,7 +135,6 @@ class CLIPViT(Backbone):
 
         self.ln_post = nn.LayerNorm(width)
         self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
-
 
     def forward(self, x: Tensor) -> List[Tensor]:
         x = self.conv1(x)  # shape = [*, width, grid, grid]

@@ -6,7 +6,7 @@ from torchvision.ops.focal_loss import sigmoid_focal_loss
 import torch.nn.functional as F
 from torchvision.ops.giou_loss import generalized_box_iou_loss
 from typing import Optional, Tuple, List
-from matcher import Matcher, Indices
+from .matcher import Matcher, Indices
 
 
 #  Copied and adapted from https://github.com/PeizeSun/OneNet/blob/19fa127c7c5896b99744458a92bf87e95c03ddad/projects/OneNet/onenet/loss.py
@@ -40,29 +40,28 @@ class OneNetLoss(nn.Module):
 
         idx = self._get_src_permutation_idx(indices)
         # here we find out the classs ids of the matched bboxes
-        # print(class_labels.shape)
-        # print(list(indices))
-        target_classes_o = torch.cat(
-            [class_labels[col] for (_, col) in indices]
-        )
+        target_classes_o = torch.cat([class_labels[i, col] for i, (_, col) in enumerate(indices)])
         print(class_labels)
         print(target_classes_o, "target_classes_o")
 
-        # we need to create a tensor of shape `(batch_size, num_predictions, num_classes)` where we place 1 in the correct class id in the last dimension (so one hot)
+        # we need to create a tensor of shape `(batch_size, num_preds, num_classes)` where we place 1 in the correct class id in the last dimension (so one hot)
         target_classes = torch.full(
             class_logits.shape[:2],
             fill_value=self.num_classes,
             dtype=torch.int64,
             device=class_logits.device,
         )
-        # then we add the right class id
+        # now we place in the correct position (w.r. to predicted bboxes) the matched classes
         target_classes[idx] = target_classes_o
-        # we flat the batch dim
+        # we flat the batch dim, to obtain `(num_preds)`
         class_logits = class_logits.flatten(0, 1)
-        # prepare one_hot encoding, we flat as well
+        # we also flat the target_classes to correct find the position of the class labels
         target_classes = target_classes.flatten(0, 1)
+        # now we find the position of the matched target labels, note that `num_classes` will be always greater than the actually number of classes (we start to count from 0)
         pos_inds = torch.nonzero(target_classes != self.num_classes, as_tuple=True)[0]
+        # labels have shape `(num_preds, num_classes)`, we need to one hot encode
         labels = torch.zeros_like(class_logits)
+        # here we select the correct pred and set the coresponding class position to 1 (one hot encoding)
         labels[pos_inds, target_classes[pos_inds]] = 1
         # compute focal loss
         class_loss = sigmoid_focal_loss(
@@ -75,7 +74,13 @@ class OneNetLoss(nn.Module):
 
         return class_loss
 
-    def get_boxes_losses(self, boxes_preds: Tensor, boxes_labels: Tensor, indices: Indices, image_size: Tensor):
+    def get_boxes_losses(
+        self,
+        boxes_preds: Tensor,
+        boxes_labels: Tensor,
+        indices: Indices,
+        image_size: Tensor,
+    ):
         idx = self._get_src_permutation_idx(indices)
 
         boxes_preds = boxes_preds[idx]
@@ -83,9 +88,7 @@ class OneNetLoss(nn.Module):
             [el[i] for el, (_, i) in zip(boxes_labels, indices)], dim=0
         )
 
-        loss_giou = generalized_box_iou_loss(
-            boxes_preds, target_boxes, reduction="sum"
-        )
+        loss_giou = generalized_box_iou_loss(boxes_preds, target_boxes, reduction="sum")
 
         loss_bbox = F.l1_loss(boxes_preds, target_boxes, reduction="sum") / image_size
 
@@ -113,6 +116,7 @@ class OneNetLoss(nn.Module):
         boxes_preds: Tensor,
         class_labels: Tensor,
         boxes_labels: Tensor,
+        image_size: Tensor,
         mask_labels: Optional[Tensor] = None,
     ):
         """_summary_
@@ -127,13 +131,12 @@ class OneNetLoss(nn.Module):
         indices = self.matcher(
             class_logits.sigmoid(), boxes_preds, class_labels, boxes_labels, mask_labels
         )
-
         # [TODO] we are missing the num_boxes here
         num_boxes = 1
 
         class_loss = self.get_class_loss(class_logits, class_labels, indices)
         bbox_location, bbox_regression_loss = self.get_boxes_losses(
-            boxes_preds, boxes_labels, indices
+            boxes_preds, boxes_labels, indices, image_size
         )
 
         # Compute all the requested losses
@@ -146,36 +149,3 @@ class OneNetLoss(nn.Module):
         return losses
 
 
-if __name__ == "__main__":
-    from matcher import MinCostMatcher
-
-    criterion = OneNetLoss(2, MinCostMatcher())
-    torch.manual_seed(0)
-    num_queries = 3
-    num_classes = 2
-
-    indices = [(torch.tensor([0, 1]), torch.tensor([1, 0], dtype=torch.int64))]
-    class_logits = torch.tensor([[[ 1.5410, -0.2934],
-         [-2.1788,  0.5684],
-         [-1.0845, -1.3986]]])
-    loss = criterion.get_class_loss(
-        class_logits=class_logits,
-        class_labels=torch.tensor([1, 0]),
-        # left pred index, right label index
-        indices=indices
-    )
-    # has to be 0.8772 to match original implementation, it's correct
-    print(loss)
-    boxes_preds=torch.tensor([[[10,10,50,50], [20,20,80,80], [10,10,50,50]]]).float()
-    print(boxes_preds.shape)
-    boxes_labels=torch.tensor([[[10,10,50,50], [20,20,80,80]]])
-    print(boxes_labels.shape)
-    loss = criterion.get_boxes_losses(
-        boxes_preds=boxes_preds,
-        boxes_labels=boxes_labels,
-        # left pred index, right label index
-        image_size=torch.tensor(640),
-        indices=indices
-    )
-    print(loss)
-    # has to be (tensor(1.8263), tensor(0.2500)), it's correct

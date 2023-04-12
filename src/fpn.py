@@ -6,13 +6,14 @@ import torch.nn.functional as F
 from .nn.common import Conv2DNormGELULayer, ConvTranspose2dNormGELULayer
 from .types import Neck
 
+
 class SimpleFPN(Neck):
     def __init__(
         self,
         in_channels: int = 768,
         out_channels: Tuple[int] = (256, 256, 256, 256),
         strides: Tuple[int] = (4, 8, 16, 32),
-        target_stride: int = 16
+        target_stride: int = 16,
     ):
         super().__init__()
         self.down_4 = nn.Sequential(
@@ -46,6 +47,7 @@ class SimpleFPN(Neck):
 
 if __name__ == "__main__":
     from torchinfo import summary
+
     # using always the first feature
     fpn = SimpleFPN()
     summary(fpn, input_size=(1, 768, 40, 40))
