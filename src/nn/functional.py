@@ -28,7 +28,7 @@ def window_partition(x: Tensor, window_size):
     ).contiguous()
     # x = x.view(batch_size, pad_height // window_size, window_size, pad_weight // window_size, window_size, channels)
     # windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, channels)
-    return windows, (pad_height, pad_weight)
+    return windows, (pad_height, pad_weight), (height, width)
 
 
 def window_unpartition(windows: Tensor, window_size: int, size: Tuple[int]) -> Tensor:

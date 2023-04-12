@@ -12,7 +12,8 @@ from torch import nn
 from .nn.common import QuickGELU
 from .types import Backbone
 from torchvision.ops import StochasticDepth
-
+from .nn.functional import window_partition, window_unpartition
+from einops import rearrange
 class LayerNorm(nn.LayerNorm):
     """Subclass torch's nn.LayerNorm to handle fp16.
     [EDIT] this shouldn't be needed if we use autocast
@@ -26,9 +27,9 @@ class LayerNorm(nn.LayerNorm):
 
 
 class ResidualAttentionBlock(nn.Module):
-    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, drop_rate: float = .0):
+    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, drop_rate: float = .0,  window_size: float = .0):
         super().__init__()
-
+        self.window_size = window_size
         self.attn = nn.MultiheadAttention(d_model, n_head)
         self.ln_1 = nn.LayerNorm(d_model)
         self.drop_path = StochasticDepth(drop_rate)
@@ -53,7 +54,14 @@ class ResidualAttentionBlock(nn.Module):
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
     def forward(self, x: torch.Tensor):
-        x = x + self.drop_path(self.attention(self.ln_1(x)))
+        shortcut = x
+        if self.window_size > 0:
+            # [NOTE] we need to rearrange everything here
+            x, pad_hw, hw = window_partition(x, self.window_size)
+        x = self.attention(self.ln_1(x))
+        if self.window_size > 0:
+            x = window_unpartition(x, self.window_size, pad_hw, hw)
+        x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.ln_2(x)))
         return x
 
