@@ -1,6 +1,6 @@
 # [WIP 🚧] Object Detection Model
 
-*This is a WIP project, this README is it's bible and it will change over time*
+*This is a WIP project, this README is its bible and it will change over time*
 
 ## Goal & Motivation
 
