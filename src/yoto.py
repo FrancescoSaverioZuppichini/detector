@@ -2,8 +2,9 @@ from .types import Backbone, Neck
 from torch import nn
 
 
-class YOTO:
+class YOTO(nn.Module):
     def __init__(self, backbone: Backbone, neck: Neck):
+        super().__init__()
         self.backbone = backbone
         self.neck = neck
 
@@ -14,14 +15,14 @@ class YOTO:
         return features
 
 
-class YOTOForObjectDetection(YOTO):
+class YOTOForObjectDetection(nn.Module):
     def __init__(self, backbone: Backbone, neck: Neck, head: nn.Module):
-        super().__init__(backbone, neck)
+        super().__init__()
+        self.model = YOTO(backbone, neck)
         self.head = head
 
     def forward(self, pixel_values):
-        features = self.backbone(pixel_values)
-        refined_features = self.neck(features)
-        outputs = self.head(refined_features)
+        features = self.model(pixel_values)
+        outputs = self.head(features)
 
         return outputs

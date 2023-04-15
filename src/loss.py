@@ -89,8 +89,8 @@ class OneNetLoss(nn.Module):
         )
 
         loss_giou = generalized_box_iou_loss(boxes_preds, target_boxes, reduction="sum")
-
-        loss_bbox = F.l1_loss(boxes_preds, target_boxes, reduction="sum") / image_size
+        # [NOTE] hacky using only the first one
+        loss_bbox = F.l1_loss(boxes_preds, target_boxes, reduction="sum") / image_size[0]
 
         return loss_giou, loss_bbox
 

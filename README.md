@@ -1,6 +1,6 @@
 # [WIP 🚧] Object Detection Model
 
-*This is a WIP project, this README is its bible and it will change over time*
+*This is a WIP project, this README is it's bible and it will change over time*
 
 ## Goal & Motivation
 
@@ -47,7 +47,7 @@ The plan of attack is the follow
 - Quick but meaningfull hyperparams exploration
 - Train on something big, e.g. Object365 or the Florence dataset (it's not out there, I've written to them but no reply)
 - Everything (even the preprocessing part) must be exportable to onnx
-- Provide developer friendly solution, such as docker files
+- Provide developer friendly solution, such as docker filesgit
 
 ### Papers & Resources
 

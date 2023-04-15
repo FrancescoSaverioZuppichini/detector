@@ -46,6 +46,7 @@ class ResidualAttentionBlock(nn.Module):
             OrderedDict(
                 [
                     ("c_fc", nn.Linear(d_model, d_model * 4)),
+                    
                     ("gelu", QuickGELU()),
                     ("c_proj", nn.Linear(d_model * 4, d_model)),
                 ]
