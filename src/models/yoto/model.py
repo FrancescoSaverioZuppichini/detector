@@ -1,7 +1,7 @@
 from torch import nn
 
-from ..types import Backbone, Neck
-
+from src.types import Backbone, Neck
+from .head import Head
 
 class YOTO(nn.Module):
     def __init__(self, backbone: Backbone, neck: Neck):
@@ -17,7 +17,7 @@ class YOTO(nn.Module):
 
 
 class YOTOForObjectDetection(nn.Module):
-    def __init__(self, backbone: Backbone, neck: Neck, head: nn.Module):
+    def __init__(self, backbone: Backbone, neck: Neck, head: Head):
         super().__init__()
         self.model = YOTO(backbone, neck)
         self.head = head

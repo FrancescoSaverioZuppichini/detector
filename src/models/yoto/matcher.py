@@ -4,7 +4,6 @@ import torch
 from scipy.optimize import linear_sum_assignment
 from torch import Tensor, nn
 from torchvision.ops.boxes import generalized_box_iou
-from torchvision.ops.focal_loss import sigmoid_focal_loss
 
 Indices = List[Tuple[Tensor, Tensor]]
 

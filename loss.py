@@ -1,7 +1,7 @@
 import torch
 
-from src.tasks.loss import OneNetLoss
-from src.tasks.object_detection.matcher import MinCostMatcher
+from src.models.loss import OneNetLoss
+from src.models.object_detection.matcher import MinCostMatcher
 
 criterion = OneNetLoss(2, MinCostMatcher())
 torch.manual_seed(0)
