@@ -1,10 +1,10 @@
-from typing import Optional, List, Callable, Any, Tuple
+from typing import Tuple
 
 import torch
-from torch import nn, Tensor
-import torch.nn.functional as F
-from .nn.common import Conv2DNormGELULayer, ConvTranspose2dNormGELULayer
-from .types import Neck
+from torch import  nn
+from src.types import Features
+from .common import Conv2dLayerNormGELULayer, ConvTranspose2dLayerNormGELULayer
+from ..types import Neck
 
 
 class SimpleFPN(Neck):
@@ -17,24 +17,28 @@ class SimpleFPN(Neck):
     ):
         super().__init__()
         self.down_4 = nn.Sequential(
-            ConvTranspose2dNormGELULayer(
+            ConvTranspose2dLayerNormGELULayer(
                 in_channels, out_channels[0], kernel_size=2, stride=4
             ),
-            Conv2DNormGELULayer(out_channels[0], out_channels[0], 1),
+            Conv2dLayerNormGELULayer(out_channels[0], out_channels[0], 1),
         )
         self.down_8 = nn.Sequential(
-            ConvTranspose2dNormGELULayer(
+            ConvTranspose2dLayerNormGELULayer(
                 in_channels, out_channels[1], kernel_size=2, stride=2
             ),
-            Conv2DNormGELULayer(out_channels[1], out_channels[1], 1),
+            Conv2dLayerNormGELULayer(out_channels[1], out_channels[1], 1),
         )
-        self.down_16 = nn.Sequential(Conv2DNormGELULayer(in_channels, out_channels[2]))
+        self.down_16 = nn.Sequential(
+            Conv2dLayerNormGELULayer(in_channels, out_channels[2])
+        )
         self.down_32 = nn.Sequential(
-            Conv2DNormGELULayer(in_channels, out_channels[3], kernel_size=2, stride=2),
-            Conv2DNormGELULayer(out_channels[3], out_channels[3], kernel_size=1),
+            Conv2dLayerNormGELULayer(
+                in_channels, out_channels[3], kernel_size=2, stride=2
+            ),
+            Conv2dLayerNormGELULayer(out_channels[3], out_channels[3], kernel_size=1),
         )
 
-    def forward(self, features: List[Tensor]) -> List[Tensor]:
+    def forward(self, features: Features) -> Features:
         # simple neck only uses the last one
         feature = features[-1]
         x_down_4 = self.down_4(feature)

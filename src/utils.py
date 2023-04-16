@@ -1,6 +1,6 @@
 import torch
-from torch.utils import benchmark
 from torch import nn
+from torch.utils import benchmark
 
 
 def profile_on_cuda(fn, min_run_time=30):

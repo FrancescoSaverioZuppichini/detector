@@ -1,12 +1,12 @@
-from src.head import Head
-from src.loss import OneNetLoss
+from src.tasks.head import Head
+from src.tasks.loss import OneNetLoss
 import torch
-from src.matcher import MinCostMatcher
-from src.fpn import SimpleFPN
-from src.vit import ViT
+from src.tasks.object_detection.matcher import MinCostMatcher
+from src.nn.fpn import SimpleFPN
+from src.nn.vit import ViT
 from einops import rearrange
 from src.nn.adapters import ViTAdapterForNeck
-from src.yoto import YOTOForObjectDetection
+from src.nn.yoto import YOTOForObjectDetection
 
 backbone = ViTAdapterForNeck(ViT(224, patch_size=16, width=768, layers=4, heads=8, output_dim=512))
 fpn = SimpleFPN(in_channels=768)

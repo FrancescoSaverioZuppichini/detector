@@ -1,19 +1,19 @@
 # copied from CLIP
 # https://github.com/openai/CLIP/blob/main/clip/model.py
 
+import math
 from collections import OrderedDict
 from typing import List
-import math
 
 import torch
-from torch import Tensor
 import torch.nn.functional as F
-from torch import nn
-from .nn.common import QuickGELU
-from .types import Backbone
-from torchvision.ops import StochasticDepth
-from .nn.functional import window_partition, window_unpartition
 from einops import rearrange
+from torch import Tensor, nn
+from torchvision.ops import StochasticDepth
+
+from .common import QuickGELU
+from .functional import window_partition, window_unpartition
+from ..types import Backbone
 
 
 class LayerNorm(nn.LayerNorm):
@@ -46,7 +46,6 @@ class ResidualAttentionBlock(nn.Module):
             OrderedDict(
                 [
                     ("c_fc", nn.Linear(d_model, d_model * 4)),
-                    
                     ("gelu", QuickGELU()),
                     ("c_proj", nn.Linear(d_model * 4, d_model)),
                 ]
@@ -88,11 +87,11 @@ class Transformer(nn.Module):
         super().__init__()
         self.width = width
         self.layers = layers
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, layers)]
+        drop_rates = [x.item() for x in torch.linspace(0, drop_path_rate, layers)]
 
         self.resblocks = nn.Sequential(
             *[
-                ResidualAttentionBlock(width, heads, attn_mask, drop_rate=dpr[i])
+                ResidualAttentionBlock(width, heads, attn_mask, drop_rate=drop_rates[i])
                 for i in range(layers)
             ]
         )

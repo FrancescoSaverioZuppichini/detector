@@ -1,10 +1,10 @@
-from torch import nn
-from torchvision.ops.focal_loss import sigmoid_focal_loss
-from torchvision.ops.boxes import generalized_box_iou
+from typing import List, Optional, Tuple
+
 import torch
 from scipy.optimize import linear_sum_assignment
-from torch import Tensor
-from typing import Optional, Tuple, List
+from torch import Tensor, nn
+from torchvision.ops.boxes import generalized_box_iou
+from torchvision.ops.focal_loss import sigmoid_focal_loss
 
 Indices = List[Tuple[Tensor, Tensor]]
 
@@ -79,7 +79,7 @@ class MinCostMatcher(Matcher):
             if curr_class_labels.shape[0] == 0:
                 indices.append((torch.as_tensor([]), torch.as_tensor([])))
                 continue
-            # [REFACTOR] each subloss in its function
+            # [TODO] each subloss in its function
             # compute the classification cost
             alpha = self.focal_loss_alpha
             gamma = self.focal_loss_gamma

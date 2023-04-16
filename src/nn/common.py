@@ -1,10 +1,9 @@
-from typing import Optional, List, Callable, Any
+from functools import partial
+from typing import Any, Callable
 
 import torch
-from torch import nn, Tensor
 import torch.nn.functional as F
-
-from functools import partial
+from torch import Tensor, nn
 
 
 class QuickGELU(nn.Module):
@@ -16,7 +15,7 @@ class QuickGELU(nn.Module):
         return x * torch.sigmoid(1.702 * x)
 
 
-class ConvNormGELULayer(nn.Sequential):
+class ConvLayerNormGELULayer(nn.Sequential):
     def __init__(
         self,
         in_channels: int,
@@ -41,5 +40,29 @@ class ConvNormGELULayer(nn.Sequential):
         self.act = QuickGELU()
 
 
-Conv2DNormGELULayer = ConvNormGELULayer
-ConvTranspose2dNormGELULayer = partial(ConvNormGELULayer, conv_layer=nn.ConvTranspose2d)
+Conv2dLayerNormGELULayer = ConvLayerNormGELULayer
+ConvTranspose2dLayerNormGELULayer = partial(
+    ConvLayerNormGELULayer, conv_layer=nn.ConvTranspose2d
+)
+
+class StackedConv2dLayers(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        depth: int = 2,
+        conv_layer: Callable[[Any], nn.Module] = ConvLayerNormGELULayer,
+        *additional_layers
+    ):
+        super().__init__()
+        self.layers = nn.Sequential(
+            conv_layer(in_channels, out_channels, kernel_size=3),
+            *[
+                conv_layer(out_channels, out_channels, kernel_size=3)
+                for _ in range(depth - 1)
+            ],
+            *additional_layers
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.layers(x)
