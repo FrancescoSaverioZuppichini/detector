@@ -6,7 +6,7 @@ from torch import Tensor, nn
 from torchvision.ops.focal_loss import sigmoid_focal_loss
 from torchvision.ops.giou_loss import generalized_box_iou_loss
 
-from .object_detection.matcher import Indices, Matcher
+from .matcher import Indices, Matcher
 
 
 #  Copied and adapted from https://github.com/PeizeSun/OneNet/blob/19fa127c7c5896b99744458a92bf87e95c03ddad/projects/OneNet/onenet/loss.py

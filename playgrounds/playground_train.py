@@ -1,12 +1,16 @@
 import pytorch_lightning as pl
-from src.tasks.object_detection.task import ObjectDetectionTask
+import sys
+sys.path.append('.')
+from src.models.yoto.task import YOTOForObjectDetectionTask
 from src.data.data import ObjectDetectionData
 from src.nn.fpn import SimpleFPN
 from src.nn.vit import ViT
 from einops import rearrange
 from src.nn.adapters import ViTAdapterForNeck
-from src.nn.yoto import YOTOForObjectDetection
-from src.tasks.head import Head
+from src.models.yoto.model import YOTOForObjectDetection
+from src.models.yoto.head import Head
+from src.models.yoto.loss import OneNetLoss
+from src.models.yoto.matcher import MinCostMatcher
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -23,7 +27,7 @@ head = Head(256, channels=256, num_classes=2)
 
 
 yoto = YOTOForObjectDetection(backbone, fpn, head)
-task = ObjectDetectionTask(yoto, num_classes=2)
+task = YOTOForObjectDetectionTask(yoto, OneNetLoss(2, matcher=MinCostMatcher()))
 
 images = torch.randn(2, 3, 224, 224)
 bboxes = torch.randn(2, 1, 4)
@@ -34,35 +38,35 @@ summary(yoto, input_data=images)
 
 
 
-# data = ObjectDetectionData(images, bboxes, labels, images_sizes, batch_size=[2], device="cpu")
+data = ObjectDetectionData(images, bboxes, labels, images_sizes, batch_size=[2], device="cpu")
 
 
-# class Collate(nn.Module):
-#     def __init__(self, transform=None, device=None):
-#         super().__init__()
-#         self.transform = transform
-#         self.device = torch.device(device)
+class Collate(nn.Module):
+    def __init__(self, transform=None, device=None):
+        super().__init__()
+        self.transform = transform
+        self.device = torch.device(device)
 
-#     def __call__(self, x: ObjectDetectionData):
-#         out = x
-#         # move data to RAM
-#         # if self.device.type == "cuda":
-#         #     out = x.apply(lambda x: x.as_tensor()).pin_memory()
-#         # else:
-#         #     out = x.apply(lambda x: x.as_tensor())
-#         # if self.device:
-#         #     # move data to gpu
-#         #     out = out.to(self.device)
-#         # if self.transform:
-#         #     # apply transforms on gpu
-#         #     out.images = self.transform(out.images)
-#         return out
+    def __call__(self, x: ObjectDetectionData):
+        out = x
+        # move data to RAM
+        # if self.device.type == "cuda":
+        #     out = x.apply(lambda x: x.as_tensor()).pin_memory()
+        # else:
+        #     out = x.apply(lambda x: x.as_tensor())
+        # if self.device:
+        #     # move data to gpu
+        #     out = out.to(self.device)
+        # if self.transform:
+        #     # apply transforms on gpu
+        #     out.images = self.transform(out.images)
+        return out
 
-# train_dl = DataLoader(
-#     data,
-#     batch_size=2,
-#     collate_fn=Collate(None, "cpu"),
-# )
-# print(data)
-# trainer = pl.Trainer(accelerator="cpu")
-# trainer.fit(model=task, train_dataloaders=train_dl)
+train_dl = DataLoader(
+    data,
+    batch_size=2,
+    collate_fn=Collate(None, "cpu"),
+)
+print(data)
+trainer = pl.Trainer(accelerator="cpu")
+trainer.fit(model=task, train_dataloaders=train_dl)
