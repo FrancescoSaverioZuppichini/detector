@@ -1,5 +1,6 @@
-from .types import Backbone, Neck
 from torch import nn
+
+from ..types import Backbone, Neck
 
 
 class YOTO(nn.Module):

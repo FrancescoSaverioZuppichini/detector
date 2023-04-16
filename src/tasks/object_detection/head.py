@@ -1,12 +1,12 @@
-from typing import List, Callable, Any, Tuple
+import math
+from typing import Any, Callable, List, Tuple
 
 import torch
-from torch import nn, Tensor
 import torch.nn.functional as F
+from torch import Tensor, nn
 
-from .nn.common import ConvNormGELULayer
-import math
-
+from src.nn.common import StackedConv2dLayers
+from src.types import Features
 
 class ScaleLayer(nn.Module):
     def __init__(self, init_value: float = 1.0):
@@ -15,29 +15,6 @@ class ScaleLayer(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return x * self.scale
-
-
-class StackedConv2dLayers(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        depth: int = 2,
-        conv_layer: Callable[[Any], nn.Module] = ConvNormGELULayer,
-        *additional_layers
-    ):
-        super().__init__()
-        self.layers = nn.Sequential(
-            conv_layer(in_channels, out_channels, kernel_size=3),
-            *[
-                conv_layer(out_channels, out_channels, kernel_size=3)
-                for _ in range(depth - 1)
-            ],
-            *additional_layers
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.layers(x)
 
 
 class Head(nn.Module):
@@ -50,6 +27,17 @@ class Head(nn.Module):
         features_stride: List[int] = (4, 8, 16, 32),
         prior_prob: float = 0.01,
     ):
+        """
+        Copied and adapter from OneNet: https://github.com/PeizeSun/OneNet/blob/main/projects/OneNet/onenet/head.py
+
+        Args:
+            in_channels (int): _description_
+            channels (int): _description_
+            num_classes (int): _description_
+            depth (int, optional): _description_. Defaults to 2.
+            features_stride (List[int], optional): _description_. Defaults to (4, 8, 16, 32).
+            prior_prob (float, optional): _description_. Defaults to 0.01.
+        """
         super().__init__()
         self.features_stride = features_stride
         self.scales = nn.ModuleList(
@@ -57,24 +45,18 @@ class Head(nn.Module):
         )
         self.num_classes = num_classes
         self.in_channels = in_channels
-        self.num_classes = num_classes
 
-        # [NOTE] we may need RELU in the last layer to force  0 - 1
         self.class_prediction_branch = StackedConv2dLayers(in_channels, channels, depth)
         self.regression_prediction_branch = StackedConv2dLayers(
             in_channels, channels, depth
         )
 
-        # was cls_score
         self.class_predictor = nn.Conv2d(
             channels, num_classes, kernel_size=3, stride=1, padding=1
         )
-        # was ltrb_pred
         self.bboxes_predictor = nn.Conv2d(
             channels, 4, kernel_size=3, stride=1, padding=1
         )
-
-        # [TODO] should be using prior prob here
 
     #     self.init_weights(prior_prob)
 
@@ -87,7 +69,7 @@ class Head(nn.Module):
     #     # initialize the bias for focal loss.
     #     nn.init.constant_(self.cls_score.bias, -math.log((1 - prior_prob) / prior_prob))
 
-    def forward(self, features: List[Tensor]) -> Tuple[Tensor]:
+    def forward(self, features: Features) -> Tuple[Tensor]:
         """
 
         Args:
@@ -136,7 +118,7 @@ class Head(nn.Module):
 
         return class_logits_all, bboxes_predictions_all
 
-    def to_xyxy_bboxes(self, locations, pred_ltrb):
+    def to_xyxy_bboxes(self, locations: Tensor, pred_ltrb: Tensor) -> Tensor:
         """
         :param locations:  (1, 2, H, W)
         :param pred_ltrb:  (N, 4, H, W)

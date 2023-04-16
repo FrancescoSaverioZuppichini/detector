@@ -1,6 +1,7 @@
-from torch import nn
 from einops import rearrange
-from src.vit import ViT
+from torch import nn
+from src.types import Features
+from src.nn.vit import ViT
 
 
 class ViTAdapterForNeck(nn.Module):
@@ -8,8 +9,7 @@ class ViTAdapterForNeck(nn.Module):
         super().__init__()
         self.vit = vit
 
-    def forward(self, *args, **kwargs):
-        print(self.vit.input_resolution)
+    def forward(self, *args, **kwargs) -> Features:
         features = self.vit(*args, **kwargs)
         features = [
             rearrange(

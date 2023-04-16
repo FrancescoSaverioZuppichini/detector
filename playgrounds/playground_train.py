@@ -1,12 +1,12 @@
 import pytorch_lightning as pl
 from src.tasks.object_detection.task import ObjectDetectionTask
-from src.data import ObjectDetectionData
-from src.fpn import SimpleFPN
-from src.vit import ViT
+from src.data.data import ObjectDetectionData
+from src.nn.fpn import SimpleFPN
+from src.nn.vit import ViT
 from einops import rearrange
 from src.nn.adapters import ViTAdapterForNeck
-from src.yoto import YOTOForObjectDetection
-from src.head import Head
+from src.nn.yoto import YOTOForObjectDetection
+from src.tasks.head import Head
 import torch
 from torch import nn
 from torch.utils.data import DataLoader

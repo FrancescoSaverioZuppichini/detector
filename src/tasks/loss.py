@@ -1,12 +1,12 @@
-from torch import nn
-from torchvision.ops.focal_loss import sigmoid_focal_loss
+from typing import List, Optional, Tuple
+
 import torch
-from torch import Tensor
-from torchvision.ops.focal_loss import sigmoid_focal_loss
 import torch.nn.functional as F
+from torch import Tensor, nn
+from torchvision.ops.focal_loss import sigmoid_focal_loss
 from torchvision.ops.giou_loss import generalized_box_iou_loss
-from typing import Optional, Tuple, List
-from .matcher import Matcher, Indices
+
+from .object_detection.matcher import Indices, Matcher
 
 
 #  Copied and adapted from https://github.com/PeizeSun/OneNet/blob/19fa127c7c5896b99744458a92bf87e95c03ddad/projects/OneNet/onenet/loss.py
@@ -40,7 +40,9 @@ class OneNetLoss(nn.Module):
 
         idx = self._get_src_permutation_idx(indices)
         # here we find out the classs ids of the matched bboxes
-        target_classes_o = torch.cat([class_labels[i, col] for i, (_, col) in enumerate(indices)])
+        target_classes_o = torch.cat(
+            [class_labels[i, col] for i, (_, col) in enumerate(indices)]
+        )
         print(class_labels)
         print(target_classes_o, "target_classes_o")
 
@@ -90,7 +92,9 @@ class OneNetLoss(nn.Module):
 
         loss_giou = generalized_box_iou_loss(boxes_preds, target_boxes, reduction="sum")
         # [NOTE] hacky using only the first one
-        loss_bbox = F.l1_loss(boxes_preds, target_boxes, reduction="sum") / image_size[0]
+        loss_bbox = (
+            F.l1_loss(boxes_preds, target_boxes, reduction="sum") / image_size[0]
+        )
 
         return loss_giou, loss_bbox
 
@@ -147,5 +151,3 @@ class OneNetLoss(nn.Module):
         }
 
         return losses
-
-
