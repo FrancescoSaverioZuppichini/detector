@@ -16,7 +16,7 @@ num_classes = 2
 vit = ViT(224, patch_size=16, width=768, layers=4, heads=8, output_dim=512)
 for param in vit.parameters():
     param.requires_grad = False
-    
+
 backbone = ViTAdapterForNeck(vit)
 fpn = SimpleFPN(in_channels=768)
 head = Head(256, channels=256, num_classes=2)
@@ -31,6 +31,7 @@ labels = torch.randint(2, (2,1), dtype=torch.int64)
 images_sizes = torch.tensor([224, 224])
 
 summary(yoto, input_data=images)
+
 
 
 # data = ObjectDetectionData(images, bboxes, labels, images_sizes, batch_size=[2], device="cpu")
