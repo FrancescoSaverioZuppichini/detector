@@ -8,6 +8,7 @@ from torch import Tensor, nn
 from src.nn.common import StackedConv2dLayers
 from src.types import Features
 
+
 class ScaleLayer(nn.Module):
     def __init__(self, init_value: float = 1.0):
         super().__init__()

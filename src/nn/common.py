@@ -45,6 +45,7 @@ ConvTranspose2dLayerNormGELULayer = partial(
     ConvLayerNormGELULayer, conv_layer=nn.ConvTranspose2d
 )
 
+
 class StackedConv2dLayers(nn.Module):
     def __init__(
         self,

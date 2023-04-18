@@ -11,9 +11,9 @@ from einops import rearrange
 from torch import Tensor, nn
 from torchvision.ops import StochasticDepth
 
+from ..types import Backbone
 from .common import QuickGELU
 from .functional import window_partition, window_unpartition
-from ..types import Backbone
 
 
 class LayerNorm(nn.LayerNorm):

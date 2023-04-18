@@ -1,7 +1,8 @@
 from einops import rearrange
 from torch import nn
-from src.types import Features
+
 from src.nn.vit import ViT
+from src.types import Features
 
 
 class ViTAdapterForNeck(nn.Module):

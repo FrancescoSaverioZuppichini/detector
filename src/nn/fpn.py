@@ -1,10 +1,12 @@
 from typing import Tuple
 
 import torch
-from torch import  nn
+from torch import nn
+
 from src.types import Features
-from .common import Conv2dLayerNormGELULayer, ConvTranspose2dLayerNormGELULayer
+
 from ..types import Neck
+from .common import Conv2dLayerNormGELULayer, ConvTranspose2dLayerNormGELULayer
 
 
 class SimpleFPN(Neck):
