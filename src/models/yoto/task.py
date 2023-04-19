@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 import torch
 from torch import optim
 
-from src.data.data import ObjectDetectionData
+from src.data.type import ObjectDetectionData
 
 from .loss import OneNetLoss
 from .matcher import MinCostMatcher

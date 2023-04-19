@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 import sys
 sys.path.append('.')
 from src.models.yoto.task import YOTOForObjectDetectionTask
-from src.data.data import ObjectDetectionData
+from src.data.type import ObjectDetectionData
 from src.nn.fpn import SimpleFPN
 from src.nn.vit import ViT
 from einops import rearrange
