@@ -1,81 +1,71 @@
 from pathlib import Path
-
+from typing import List, Optional
 import torch
 from tensordict import MemmapTensor, TensorDict
 
 from .datasets.yolo import YOLODataset
 from .type import ObjectDetectionData
-
+from torch.utils.data import DataLoader
+import os
+import torch.nn.functional as F
+from tqdm.rich import tqdm
+from src.logger import logger
 
 class ObjectDetectionDatasetBuilder:
     def __init__(self, dst: Path):
         self.dst = dst
-
-    def _maybe_create_dst(self):
+    
+    def _build(self, dataset: YOLODataset, batch_size: int, num_workers: Optional[int] = None) -> ObjectDetectionData:
         self.dst.mkdir(exist_ok=True, parents=True)
-
-    def build(self, dataset: YOLODataset) -> ObjectDetectionData:
-        self._maybe_create_dst()
+        logger.info(f"🛠️ Building dataset using {dataset.__class__.__name__}")
         dataset_size = len(dataset)
+        batch_size = 8 if batch_size is None else batch_size
+        num_workers = os.cpu_count() if num_workers is None else num_workers
         # I need to know how much I want to pad
-        max_num_of_labels = dataset.get_max_num_of_labels_per_image(dataset.root)
-        # Let's get the first one so we can infer the shape
-        img, _ = dataset(0)
-        data = ObjectDetectionData(
+        max_num_of_labels = dataset.get_max_num_of_labels(dataset.root)
+        # let's get the first one so we can infer the shape
+        image = dataset[0].image
+        data: TensorDict = ObjectDetectionData(
             image=MemmapTensor(
                 dataset_size,
-                *img.shape,
+                *image.shape[1:],
                 dtype=torch.uint8,
+                filename=str(self.dst) + '/image.memmap'
             ),
-            bboxes=MemmapTensor(dataset_size, max_num_of_labels, 4, dtype=torch.uint8),
-            labels=MemmapTensor(dataset_size, 1, dtype=torch.float64),
-            images_sizes=MemmapTensor(dataset_size, 2, dtype=torch.uint8),
+            bboxes=MemmapTensor(dataset_size, max_num_of_labels, 4, dtype=torch.int16, filename=str(self.dst) + '/bboxes.memmap'),
+            labels=MemmapTensor(dataset_size, max_num_of_labels, dtype=torch.float64, filename=str(self.dst) + '/labels.memmap'),
+            images_sizes=MemmapTensor(dataset_size, 2, dtype=torch.uint8, filename=str(self.dst) + '/images_sizes.memmap'),
             batch_size=[dataset_size],
         )
+        data.memmap_(prefix=self.dst)
+        logger.debug(data)
 
+        data_loader = DataLoader(dataset, batch_size=batch_size, num_workers=os.cpu_count(), collate_fn=lambda x: x)
+        pbar = tqdm(total=dataset_size)
 
-#  @classmethod
-#     def from_dataset(cls, src: Path):
-#         file_paths = list(get_file_paths(src))
-#         img, _ = get_image_and_labels(file_paths[0])
-#         num_images = len(file_paths)
-#         max_num_of_labels = get_max_num_of_labels_per_image(src)
-#         # N = num of images, M = bboxes per image -> NxMx...
-#         data: TensorDict = cls(
-#             images=MemmapTensor(
-#                 num_images,
-#                 *img.shape,
-#                 dtype=torch.uint8,
-#             ),
-#             labels=MemmapTensor(num_images, max_num_of_labels, 5, dtype=torch.float32),
-#             labels_offsets=MemmapTensor(num_images, dtype=torch.long),
-#             # bboxes=MemmapTensor(num_images, dtype=torch.float32),
-#             batch_size=[num_images],
-#         )
-#         data = data.memmap_()
+        for batch_idx, batch in enumerate(data_loader):
+            batch_offset = batch_idx * batch_size
+            batch: List[ObjectDetectionData] = batch
+            for batch_data_idx, batch_data in enumerate(batch):
+                # now I need to pad the bboxes
+                padded_bboxes = torch.zeros((batch_data.shape[0], max_num_of_labels, 4), dtype=batch_data.bboxes.dtype)
+                padded_bboxes[...,:padded_bboxes.shape[1],...] = padded_bboxes
+                batch_data.bboxes = padded_bboxes
+                # and the labels!
+                batch_data.labels =  F.pad(batch_data.labels, (0, max_num_of_labels - batch_data.labels.shape[-1]), value=0)
+                data[batch_offset + batch_data_idx: batch_offset + batch_data_idx + 1] = batch_data
+                pbar.update(1)
 
-#         # dl = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
-#         i = 0
-
-#         def wrapper_to_add_to_data(i: int):
-#             image, labels = get_image_and_labels(file_paths[i])
-#             num_labels = labels.shape[0] # Mx5 [class id, w, h, xc, yc]
-#             padded_labels = torch.empty((max_num_of_labels, 5))
-#             padded_labels[:num_labels] = labels
-#             _batch = 1
-#             pbar.update(_batch)
-#             data[i : i + _batch] = cls(
-#                 images=image.unsqueeze(0),
-#                 labels=padded_labels.unsqueeze(0),
-#                 labels_offsets=torch.tensor([num_labels], dtype=torch.long).unsqueeze(
-#                     0
-#                 ),
-#                 batch_size=[_batch],
-#             )
-
-#         pipe = pl.thread.map(wrapper_to_add_to_data, range(len(file_paths)), workers=16, maxsize=8)
-
-#         pbar = tqdm(total=len(file_paths))
-#         _ = list(pipe)
-
-#         return data
+        return data
+    
+    def _load(self) -> ObjectDetectionData:
+        td = TensorDict.load_memmap(self.dst)
+        logger.info(f"💾 Found a non empty folder at {self.dst}, loading dataset from there.")
+        return ObjectDetectionData(**td, batch_size=td.batch_size)
+    
+    def build(self, dataset: YOLODataset, batch_size: int, num_workers: Optional[int] = None, overwrite_if_exists: bool = False) -> ObjectDetectionData:
+        dataset_already_exists = self.dst.exists()
+        if dataset_already_exists and not overwrite_if_exists:
+            return self._load()
+        return self._build(dataset, batch_size, num_workers)
+    

@@ -6,10 +6,17 @@ from torch import nn
 
 from .type import ObjectDetectionData
 
+class Augmentation(nn.Module):
+    def __init__(self, generator: torch.Generator = None):
+        self._generator = generator
 
-class RandomHFlip(nn.Module):
-    def __init__(self, prob: float = 0.5):
-        super().__init__()
+    def set_generator(self, generator: torch.Generator = None):
+        if self._generator is not None:
+            self._generator.set_state(generator.get_state())
+
+class RandomHFlip(Augmentation):
+    def __init__(self, prob: float = 0.5, generator: torch.Generator = None):
+        super().__init__(generator)
         self.prob = prob
 
     def forward(self, data: ObjectDetectionData) -> ObjectDetectionData:
@@ -29,7 +36,6 @@ class RandomHFlip(nn.Module):
             torch.zeros(
                 x.shape[0], 1, 1, 1, device=x.device, dtype=torch.bool
             ).bernoulli_(self.prob)
-            # .expand_as(x)
         )
         return idx
 
@@ -165,7 +171,7 @@ class RandomCrop(nn.Module):
         return bboxes_cropped, labels_cropped
 
 
-class Resize(nn.Module):
+class Resize(Augmentation):
     # [TODO] fix `keep_aspect_ratio`
     def __init__(self, size: Tuple[int, int], keep_aspect_ratio: bool = False):
         super().__init__()
@@ -254,12 +260,6 @@ class Resize(nn.Module):
         return data
 
 
-class Augmentation(nn.Module):
-    def __init__(self, generator: torch.Generator = None):
-        self._generator = generator
-
-    def set_generator(self, generator: torch.Generator = None):
-        self._generator.set_state(generator.get_state())
 
 
 class SequentialAugmentation(Augmentation):

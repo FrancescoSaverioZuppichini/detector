@@ -33,7 +33,7 @@ class YOLODataset(Dataset):
         return data
 
     def get_labels(self, file_path: Path) -> torch.Tensor:
-        label_file_path = file_path.parent.parent / "labels" / f"{file_path.stem}.txt"
+        label_file_path = file_path
         with label_file_path.open("r") as f:
             content = f.read()
             is_empty = content == ""
@@ -48,11 +48,12 @@ class YOLODataset(Dataset):
         self, file_path: Path
     ) -> tuple[torch.Tensor, torch.IntTensor]:
         labels = self.get_labels(file_path)
-        image = read_image(str(file_path))
+        image_file_path = file_path.parent.parent / "images" / f"{file_path.stem}.{self.image_format}"
+        image = read_image(str(image_file_path))
         return image, labels
 
     def get_file_paths(self, root: Path, image_format: str = "jpg") -> list[Path]:
-        return root.glob(f"**/*.{image_format}")
+        return root.glob(f"**/*.txt")
 
     @staticmethod
     def get_num_of_labels_in_a_file(file_path: Path):
@@ -63,14 +64,13 @@ class YOLODataset(Dataset):
             return num_of_labels_in_a_file
 
     @staticmethod
-    def get_num_of_labels(src: Path) -> int:
-        num_of_labels = reduce(
-            lambda x, y: x + y,
+    def get_max_num_of_labels(src: Path) -> int:
+        max_num_of_labels = max(
             map(
                 YOLODataset.get_num_of_labels_in_a_file, (src / "labels").glob("*.txt")
             ),
         )
-        return num_of_labels
+        return max_num_of_labels
 
 
 if __name__ == "__main__":
