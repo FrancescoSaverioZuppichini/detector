@@ -17,6 +17,7 @@ class Augmentation(nn.Module):
             self._generator.set_state(generator.get_state())
 
 class RandomFlip(Augmentation):
+    # [NOTE] use enum for direction
     def __init__(self, p: float = 0.5, generator: torch.Generator = None, direction: str = 'horizontal'):
         super().__init__(generator)
         self.p = p
@@ -211,10 +212,10 @@ class Resize(Augmentation):
             F.interpolate(img.unsqueeze(0), size=tuple(new_size.tolist()), mode="bilinear", align_corners=False)
             for img, new_size in zip(images, target_sizes)
         ]
-        padded_images_sizes = torch.max(target_sizes, dim=0).values
+        # padding is passed as `batch_size x (top, left, bottom, right)`, pytorch wants (left, right, top, bottom)
         padded_images = [
-            F.pad(resized_img, padding, padded_images_sizes)
-            for resized_img in resized_images
+            F.pad(resized_img, (pad_img[1], pad_img[3], pad_img[0], pad_img[2]))
+            for pad_img, resized_img in zip(padding, resized_images)
         ]
         return torch.cat(padded_images, dim=0)
     
@@ -227,29 +228,23 @@ class Resize(Augmentation):
         return bboxes
 
     def shift_bboxes(self, bboxes: torch.Tensor, padding: torch.Tensor) -> torch.Tensor:
-        bboxes[..., [0, 2]] += padding[..., 0].unsqueeze(-1)
-        bboxes[..., [1, 3]] += padding[..., 1].unsqueeze(-1)
+        bboxes[..., [0, 2]] += padding[..., 1].unsqueeze(-1)
+        bboxes[..., [1, 3]] += padding[..., 0].unsqueeze(-1)
         return bboxes
 
     def forward(self, data: ObjectDetectionData) -> ObjectDetectionData:
         scale_factors = self.compute_scale_factors(data.images_sizes)
         if self.keep_aspect_ratio:
             target_sizes = (data.images_sizes * scale_factors).long()
+            # padding is passed as `batch_size x (top, left, bottom, right)`
             padding = (
                 (
                     torch.tensor(self.size, device=data.images_sizes.device)
                     - target_sizes
                 )
                 / 2
-            ).long()
-            print(padding)
-            data.image = self.resize_and_pad_images(data.image, target_sizes, tuple(padding.tolist()))
-            # data.image = torch.stack(
-            #     [
-            #         F.pad(self.resize_image(image, tuple(target_size)), self.compute_padding(resized_img.shape[-2:], padded_images_sizes))
-            #         for image, target_size in zip(data.image, target_sizes)
-            #     ]
-            # )
+            ).long().repeat(1, 2)
+            data.image = self.resize_and_pad_images(data.image, target_sizes, padding)
             data.bboxes = self.resize_bboxes(data.bboxes, scale_factors)
             data.bboxes = self.shift_bboxes(data.bboxes, padding)
             data.images_sizes = torch.tensor(
