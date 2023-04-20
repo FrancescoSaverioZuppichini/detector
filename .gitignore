@@ -1,5 +1,8 @@
 # lighting stuff
 lightning_logs/
+# my stuff
+datasets/
+memmap/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

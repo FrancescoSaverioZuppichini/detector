@@ -32,8 +32,8 @@ class ObjectDetectionDatasetBuilder:
                 dtype=torch.uint8,
                 filename=str(self.dst) + '/image.memmap'
             ),
-            bboxes=MemmapTensor(dataset_size, max_num_of_labels, 4, dtype=torch.int16, filename=str(self.dst) + '/bboxes.memmap'),
-            labels=MemmapTensor(dataset_size, max_num_of_labels, dtype=torch.float64, filename=str(self.dst) + '/labels.memmap'),
+            bboxes=MemmapTensor(dataset_size, max_num_of_labels, 4, dtype=torch.float32, filename=str(self.dst) + '/bboxes.memmap'),
+            labels=MemmapTensor(dataset_size, max_num_of_labels, dtype=torch.int64, filename=str(self.dst) + '/labels.memmap'),
             images_sizes=MemmapTensor(dataset_size, 2, dtype=torch.uint8, filename=str(self.dst) + '/images_sizes.memmap'),
             batch_size=[dataset_size],
         )

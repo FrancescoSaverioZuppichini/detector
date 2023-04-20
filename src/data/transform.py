@@ -3,21 +3,24 @@ from typing import List, Tuple, Optional
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torchvision.ops.boxes import box_convert
 
 from .type import ObjectDetectionData
 
 class Augmentation(nn.Module):
     def __init__(self, generator: torch.Generator = None):
+        super().__init__()
         self._generator = generator
 
     def set_generator(self, generator: torch.Generator = None):
         if self._generator is not None:
             self._generator.set_state(generator.get_state())
 
-class RandomHFlip(Augmentation):
-    def __init__(self, prob: float = 0.5, generator: torch.Generator = None):
+class RandomFlip(Augmentation):
+    def __init__(self, p: float = 0.5, generator: torch.Generator = None, direction: str = 'horizontal'):
         super().__init__(generator)
-        self.prob = prob
+        self.p = p
+        self.direction = direction
 
     def forward(self, data: ObjectDetectionData) -> ObjectDetectionData:
         idx = self.generate_flip_mask(data.image)
@@ -35,7 +38,7 @@ class RandomHFlip(Augmentation):
         idx = (
             torch.zeros(
                 x.shape[0], 1, 1, 1, device=x.device, dtype=torch.bool
-            ).bernoulli_(self.prob)
+            ).bernoulli_(self.p, generator=self._generator)
         )
         return idx
 
@@ -44,13 +47,17 @@ class RandomHFlip(Augmentation):
         # x.masked_fill(idx, 0.0) -> set the image we want to flip to zero
         # x.masked_fill(~idx, 0.0) -> set the image we don't want to flip to zero, and we flip the other
         # when we sum
-        x_flipped = x.masked_fill(idx, 0.0).add_(x.masked_fill(~idx, 0.0).flip(-1))
+        flip_axis = -1 if self.direction == 'horizontal' else -2
+        x_flipped = x.masked_fill(idx, 0.0).add_(x.masked_fill(~idx, 0.0).flip(flip_axis))
         return x_flipped
 
     def flip_bboxes(self, bboxes: torch.Tensor, x: torch.Tensor, idx: torch.Tensor):
         # here we basically clone the bboxes, we swap all of them and replace the original tensor with the swapped one based on the idx
         bboxes_flipped = bboxes.clone()
-        bboxes_flipped[..., [0, 2]] = x.shape[-1] - bboxes[..., [2, 0]]
+        if self.direction == 'horizontal':
+            bboxes_flipped[..., [0, 2]] = x.shape[-1] - bboxes[..., [2, 0]]
+        else:
+            bboxes_flipped[..., [1, 3]] = x.shape[-2] - bboxes[..., [3, 1]]
         bboxes.masked_scatter_(idx[..., 0, 0, 0].unsqueeze(-1), bboxes_flipped)
         return bboxes
 
@@ -259,7 +266,30 @@ class Resize(Augmentation):
 
         return data
 
+class BoxConverter(nn.Module):
+    FORMATS = ['xyxy', 'xywh', 'cxcywh']
+    def __init__(self, in_fmt: str, out_fmt: str):
+        super().__init__()
+        if in_fmt not in self.FORMATS:
+            raise ValueError(f'in_fmt={in_fmt} not in {self.FORMATS}')
+        if out_fmt not in self.FORMATS:
+            raise ValueError(f'out_fmt={out_fmt} not in {self.FORMATS}')
+        self.in_fmt = in_fmt
+        self.out_fmt = out_fmt
 
+    def forward(self, data: ObjectDetectionData) -> ObjectDetectionData:
+        data.bboxes = box_convert(data.bboxes, self.in_fmt, self.out_fmt)
+        return data
+
+class Normalizer(nn.Module):
+    def __init__(self, mean, std):
+        super().__init__()
+        self.mean = torch.tensor(mean, dtype=torch.float32).view(1, -1, 1, 1)
+        self.std = torch.tensor(std, dtype=torch.float32).view(1, -1, 1, 1)
+
+    def forward(self, data: ObjectDetectionData) -> ObjectDetectionData:
+        data.image = (data.image - self.mean.to(data.image.device)) / self.std.to(data.image.device)
+        return data
 
 
 class SequentialAugmentation(Augmentation):
