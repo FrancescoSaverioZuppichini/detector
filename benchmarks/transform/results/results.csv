@@ -1,0 +1,7 @@
+benchmark_name,device,batch_size,num_workers,size,fp16,compile,mean,median,number_per_run,memory_mb
+pytorch-gpu,cuda,32,4,"(640, 640)",False,False,4356.5605,4295.4240,1,5860.0010
+pytorch-gpu,cuda,32,4,"(640, 640)",True,True,4291.8854,4287.9386,1,2969.8447
+pytorch-gpu,cuda,32,8,"(640, 640)",False,False,3899.9751,3846.4671,1,5860.0010
+pytorch-vanilla,cuda,32,8,"(640, 640)",False,False,13541.0922,13374.4708,1,4968.7500
+pytorch-gpu,cuda,32,8,"(640, 640)",False,False,3663.2235,3667.3718,1,5860.0010
+pytorch-gpu,cuda,32,8,"(640, 640)",True,True,3858.6616,3857.2351,1,2969.8447

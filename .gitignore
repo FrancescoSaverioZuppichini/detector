@@ -3,6 +3,7 @@ lightning_logs/
 # my stuff
 datasets/
 memmap/
+benchmarks/plots/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -1,0 +1,9 @@
+benchmark_name,num_iter,device,batch_size,num_workers,total_time_ms
+pytorch-vanilla,5,cpu,32,4,16.05
+test,5,cpu,32,4,10.5594
+pytorch-vanilla,5,cpu,64,4,16.05
+test,5,cpu,64,4,10.5594tensordict,5,cpu,32,4,12.7553
+tensordict,5,cpu,32,1,11.1986
+tensordict,5,cpu,32,1,8.4319
+tensordict,5,cpu,32,4,5.1069
+pytorch-vanilla,5,cuda,32,4,22.7543
