@@ -39,8 +39,8 @@ def get_benchmark_func(
     transform = T.Compose(
         [
             T.Resize(size, antialias=False),
-            T.RandomHorizontalFlip(1),
-            T.RandomVerticalFlip(1),
+            T.RandomHorizontalFlip(.5),
+            T.RandomVerticalFlip(.5),
             T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
         ]
     )

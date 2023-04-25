@@ -37,13 +37,22 @@ class Resize(nn.Module):
         return F.interpolate(x, size=self.size)
 
 
-class Flip(nn.Module):
-    def __init__(self, dim: int = -1):
+class RandomFlip(nn.Module):
+    def __init__(self, p: float = 0.5, dim: int = -1):
         super().__init__()
+        self.p = p
         self.dim = dim
 
     def forward(self, x: Tensor) -> Tensor:
-        return x.flip(self.dim)
+        flip_mask =  (
+            torch.zeros(
+                x.shape[0], 1, 1, 1, device=x.device, dtype=torch.bool
+            ).bernoulli_(self.p)
+        )
+        x_flipped = x.flip(self.dim)
+        x.mul_(~flip_mask)
+        x.addcmul_(flip_mask, x_flipped)
+        return x
 
 
 class Normalize(nn.Module):
@@ -83,8 +92,8 @@ def get_benchmark_func(
     transform = Compose(
         [
             Resize(size),
-            Flip(-1),
-            Flip(-2),
+            RandomFlip(dim=-1),
+            RandomFlip(dim=-2),
             Normalize(
                 [0.5, 0.5, 0.5],
                 [0.5, 0.5, 0.5],
