@@ -21,7 +21,7 @@ for batch in dl:
     batch = transform(batch)
 ```
 
-Since we will doing augmentation (resize, etc) on the GPU we don't need to convert the image to `float32` (or `float16`) before sending it.
+Since we will do augmentation (resize, etc) on the GPU we don't need to convert the image to `float32` (or `float16`) before sending it.
 
 Transformations are normal `nn.Module`, so we can also call `torch.compile` on them.
 
