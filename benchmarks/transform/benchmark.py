@@ -5,7 +5,7 @@ from time import perf_counter
 from functools import partial
 from torch.utils import benchmark
 import torch
-from typing import Tuple
+from typing import Tuple, Callable, Any, Iterator
 from pytorch_dataset import get_benchmark_func as pytorch_get_benchmark_func
 from pytorch_transform_on_gpu_dataset import (
     get_benchmark_func as pytorch_pytorch_transform_on_gpu_dataset,
@@ -44,7 +44,7 @@ def with_perf_counter(benchmark_func, *args, **kwargs):
 
 def with_pytorch_benchmark(benchmark_func, *args, min_run_time=30, **kwargs):
     # call it so it does its initialisation
-    data_iterator_func = benchmark_func(*args, **kwargs)
+    data_iterator_func: Callable[[Any], Iterator] = benchmark_func(*args, **kwargs)
     # warmup
     for _ in range(2):
         list(data_iterator_func())

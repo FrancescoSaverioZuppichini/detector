@@ -4,8 +4,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torchvision.ops.boxes import box_convert
+from torch import Tensor
+from .data import ObjectDetectionData
 
-from .type import ObjectDetectionData
 
 class Augmentation(nn.Module):
     def __init__(self, generator: torch.Generator = None):
@@ -16,50 +17,59 @@ class Augmentation(nn.Module):
         if self._generator is not None:
             self._generator.set_state(generator.get_state())
 
+
 class RandomFlip(Augmentation):
     # [NOTE] use enum for direction
-    def __init__(self, p: float = 0.5, generator: torch.Generator = None, direction: str = 'horizontal'):
+    def __init__(
+        self,
+        p: float = 0.5,
+        generator: torch.Generator = None,
+        direction: str = "horizontal",
+    ):
         super().__init__(generator)
         self.p = p
         self.direction = direction
+        self.flip_axis = -2 if self.direction == "horizontal" else -1
 
     def forward(self, data: ObjectDetectionData) -> ObjectDetectionData:
-        idx = self.generate_flip_mask(data.image)
-        x_flipped = self.flip_image(data.image, idx)
-        bboxes_flipped = self.flip_bboxes(data.bboxes, data.image, idx)
+        flip_mask = self.generate_flip_mask(data.images)
+        x_flipped = self.flip_image(data.images, flip_mask)
+        bboxes_flipped = self.flip_bboxes(data.bboxes, data.images, flip_mask)
         return ObjectDetectionData(
             image=x_flipped,
             bboxes=bboxes_flipped,
-            labels=data.labels,
+            labels=data.classes,
             images_sizes=data.images_sizes,
             batch_size=data.batch_size,
         )
 
-    def generate_flip_mask(self, x: torch.Tensor):
-        idx = (
-            torch.zeros(
-                x.shape[0], 1, 1, 1, device=x.device, dtype=torch.bool
-            ).bernoulli_(self.p, generator=self._generator)
-        )
-        return idx
+    def generate_flip_mask(self, x: torch.Tensor) -> Tensor:
+        flip_mask = torch.zeros(
+            x.shape[0], 1, 1, 1, device=x.device, dtype=torch.bool
+        ).bernoulli_(self.p, generator=self._generator)
+        return flip_mask
 
-    def flip_image(self, x: torch.Tensor, idx: torch.Tensor):
+    def flip_image(self, x: torch.Tensor, flip_mask: torch.Tensor):
         # [NOTE] should change param from `idx` to flip_mask
         # x.masked_fill(idx, 0.0) -> set the image we want to flip to zero
         # x.masked_fill(~idx, 0.0) -> set the image we don't want to flip to zero, and we flip the other
         # when we sum
-        flip_axis = -1 if self.direction == 'horizontal' else -2
-        x_flipped = x.masked_fill(idx, 0.0).add_(x.masked_fill(~idx, 0.0).flip(flip_axis))
+        x_flipped = x.flip(self.flip_axis)
+        x.mul_(~flip_mask)
+        x.addcmul_(flip_mask, x_flipped)
+
         return x_flipped
 
-    def flip_bboxes(self, bboxes: torch.Tensor, x: torch.Tensor, idx: torch.Tensor):
+    def flip_bboxes(
+        self, bboxes: torch.Tensor, x: torch.Tensor, flip_mask: torch.Tensor
+    ) -> Tensor:
         # here we basically clone the bboxes, we swap all of them and replace the original tensor with the swapped one based on the idx
         bboxes_flipped = bboxes.clone()
-        if self.direction == 'horizontal':
+        if self.direction == "horizontal":
             bboxes_flipped[..., [0, 2]] = x.shape[-1] - bboxes[..., [2, 0]]
         else:
             bboxes_flipped[..., [1, 3]] = x.shape[-2] - bboxes[..., [3, 1]]
-        bboxes.masked_scatter_(idx[..., 0, 0, 0].unsqueeze(-1), bboxes_flipped)
+        bboxes.masked_scatter_(flip_mask[..., 0, 0, 0].unsqueeze(-1), bboxes_flipped)
         return bboxes
 
 
@@ -71,10 +81,10 @@ class RandomCrop(nn.Module):
         self.keep_aspect_ratio = keep_aspect_ratio
 
     def forward(self, data: ObjectDetectionData) -> ObjectDetectionData:
-        index0, index1 = self.generate_crop_indices(data.image)
-        data.image = self.crop_image(data.image, index0, index1)
-        data.bboxes, data.labels = self.crop_bboxes(
-            data.bboxes, data.labels, index0, index1
+        index0, index1 = self.generate_crop_indices(data.images)
+        data.images = self.crop_image(data.images, index0, index1)
+        data.bboxes, data.classes = self.crop_bboxes(
+            data.bboxes, data.classes, index0, index1
         )
         data.images_sizes = (
             torch.tensor([self.h, self.w], device=data.images_sizes.device)
@@ -202,14 +212,21 @@ class Resize(Augmentation):
             )
 
     def resize_image(self, image: torch.Tensor, size: Tuple[int, int]) -> torch.Tensor:
-        resized_images =  F.interpolate(
+        resized_images = F.interpolate(
             image.unsqueeze(0), size, mode="bilinear", align_corners=False
         ).squeeze(0)
         return resized_images
 
-    def resize_and_pad_images(self, images: torch.Tensor, target_sizes: torch.Tensor, padding: torch.Tensor) -> torch.Tensor:
+    def resize_and_pad_images(
+        self, images: torch.Tensor, target_sizes: torch.Tensor, padding: torch.Tensor
+    ) -> torch.Tensor:
         resized_images = [
-            F.interpolate(img.unsqueeze(0), size=tuple(new_size.tolist()), mode="bilinear", align_corners=False)
+            F.interpolate(
+                img.unsqueeze(0),
+                size=tuple(new_size.tolist()),
+                mode="bilinear",
+                align_corners=False,
+            )
             for img, new_size in zip(images, target_sizes)
         ]
         # padding is passed as `batch_size x (top, left, bottom, right)`, pytorch wants (left, right, top, bottom)
@@ -218,13 +235,13 @@ class Resize(Augmentation):
             for pad_img, resized_img in zip(padding, resized_images)
         ]
         return torch.cat(padded_images, dim=0)
-    
+
     def resize_bboxes(
         self, bboxes: torch.Tensor, scale_factors: torch.Tensor
     ) -> torch.Tensor:
         bboxes = bboxes.float()
-        bboxes[...,[0,2]] *= scale_factors[...,1].unsqueeze(-1)
-        bboxes[...,[1,3]] *= scale_factors[...,0].unsqueeze(-1)
+        bboxes[..., [0, 2]] *= scale_factors[..., 1].unsqueeze(-1)
+        bboxes[..., [1, 3]] *= scale_factors[..., 0].unsqueeze(-1)
         return bboxes
 
     def shift_bboxes(self, bboxes: torch.Tensor, padding: torch.Tensor) -> torch.Tensor:
@@ -239,20 +256,24 @@ class Resize(Augmentation):
             # padding is passed as `batch_size x (top, left, bottom, right)`
             padding = (
                 (
-                    torch.tensor(self.size, device=data.images_sizes.device)
-                    - target_sizes
+                    (
+                        torch.tensor(self.size, device=data.images_sizes.device)
+                        - target_sizes
+                    )
+                    / 2
                 )
-                / 2
-            ).long().repeat(1, 2)
-            data.image = self.resize_and_pad_images(data.image, target_sizes, padding)
+                .long()
+                .repeat(1, 2)
+            )
+            data.images = self.resize_and_pad_images(data.images, target_sizes, padding)
             data.bboxes = self.resize_bboxes(data.bboxes, scale_factors)
             data.bboxes = self.shift_bboxes(data.bboxes, padding)
             data.images_sizes = torch.tensor(
                 self.size, device=data.images_sizes.device
             ).expand_as(data.images_sizes)
         else:
-            data.image = torch.stack(
-                [self.resize_image(image, self.size) for image in data.image]
+            data.images = torch.stack(
+                [self.resize_image(image, self.size) for image in data.images]
             )
             data.bboxes = self.resize_bboxes(data.bboxes, scale_factors)
             data.images_sizes = torch.tensor(
@@ -261,14 +282,16 @@ class Resize(Augmentation):
 
         return data
 
+
 class BoxConverter(nn.Module):
-    FORMATS = ['xyxy', 'xywh', 'cxcywh']
+    FORMATS = ["xyxy", "xywh", "cxcywh"]
+
     def __init__(self, in_fmt: str, out_fmt: str):
         super().__init__()
         if in_fmt not in self.FORMATS:
-            raise ValueError(f'in_fmt={in_fmt} not in {self.FORMATS}')
+            raise ValueError(f"in_fmt={in_fmt} not in {self.FORMATS}")
         if out_fmt not in self.FORMATS:
-            raise ValueError(f'out_fmt={out_fmt} not in {self.FORMATS}')
+            raise ValueError(f"out_fmt={out_fmt} not in {self.FORMATS}")
         self.in_fmt = in_fmt
         self.out_fmt = out_fmt
 
@@ -276,15 +299,20 @@ class BoxConverter(nn.Module):
         data.bboxes = box_convert(data.bboxes, self.in_fmt, self.out_fmt)
         return data
 
-class Normalizer(nn.Module):
-    def __init__(self, mean, std):
-        super().__init__()
-        self.mean = torch.tensor(mean, dtype=torch.float32).view(1, -1, 1, 1)
-        self.std = torch.tensor(std, dtype=torch.float32).view(1, -1, 1, 1)
 
-    def forward(self, data: ObjectDetectionData) -> ObjectDetectionData:
-        data.image = (data.image - self.mean.to(data.image.device)) / self.std.to(data.image.device)
-        return data
+class Normalize(nn.Module):
+    def __init__(
+        self, mean, std, device: str = "str", dtype: torch.dtype = torch.float32
+    ):
+        super().__init__()
+        self.mean, self.std = (
+            torch.tensor(mean, device=device, dtype=dtype)[None, ..., None, None],
+            torch.tensor(mean, device=device, dtype=dtype)[None, ..., None, None],
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        x.sub_(self.mean).div_(self.std)
+        return x
 
 
 class SequentialAugmentation(Augmentation):

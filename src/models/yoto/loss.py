@@ -43,8 +43,6 @@ class OneNetLoss(nn.Module):
         target_classes_o = torch.cat(
             [class_labels[i, col] for i, (_, col) in enumerate(indices)]
         )
-        print(class_labels)
-        print(target_classes_o, "target_classes_o")
 
         # we need to create a tensor of shape `(batch_size, num_preds, num_classes)` where we place 1 in the correct class id in the last dimension (so one hot)
         target_classes = torch.full(
@@ -94,7 +92,7 @@ class OneNetLoss(nn.Module):
         # [NOTE] hacky using only the first one
         loss_bbox = (
             F.l1_loss(boxes_preds, target_boxes, reduction="sum") / image_size[0]
-        )
+        ).mean()
 
         return loss_giou, loss_bbox
 

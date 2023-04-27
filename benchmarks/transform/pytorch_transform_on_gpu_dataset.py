@@ -62,7 +62,7 @@ class Normalize(nn.Module):
         super().__init__()
         self.mean, self.std = (
             torch.tensor(mean, device=device, dtype=dtype)[None, ..., None, None],
-            torch.tensor(mean, device=device, dtype=dtype)[None, ..., None, None],
+            torch.tensor(std, device=device, dtype=dtype)[None, ..., None, None],
         )
 
     def forward(self, x: Tensor) -> Tensor:

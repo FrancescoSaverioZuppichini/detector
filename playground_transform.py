@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from typing import Tuple, List
-from src.data.type import ObjectDetectionData
+from src.data.data import ObjectDetectionData
 import torch.nn.functional as F
 from src.data.builder import ObjectDetectionDatasetBuilder
 from src.data.datasets.yolo import YOLODataset
@@ -86,17 +86,17 @@ print(data_tr.bboxes)
 
 
 
-# print(f"Needed MB = {get_size_mb(data.image) + get_size_mb(data.bboxes)}")
+# print(f"Needed MB = {get_size_mb(data.images) + get_size_mb(data.bboxes)}")
 
 # @profile_on_cuda
 # def profile():
 #     data.apply(lambda tensor: tensor.contiguous().pin_memory().to("cuda", non_blocking=True))
 # dl = DataLoader(data, collate_fn=partial(my_collate_fn, device=torch.device("cuda")), batch_size=512)
 # # data.apply(lambda _tensor: _tensor.contiguous())
-# total = data.image.shape[0]
+# total = data.images.shape[0]
 
 # for _ in range(10):
 #     pbar = tqdm(total=total)
 #     for data in dl:
-#         pbar.update(data.image.shape[0])
+#         pbar.update(data.images.shape[0])
 #         continue

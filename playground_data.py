@@ -4,7 +4,7 @@ from src.data.datasets.yolo import YOLODataset
 from pathlib import Path
 from src.data.transform import SequentialAugmentation, RandomHFlip
 import torch
-from src.data.type import ObjectDetectionData
+from src.data.data import ObjectDetectionData
 
 ds = YOLODataset(Path("/home/zuppif/Documents/neatly/detector/datasets/train"))
 print(ds[0].image.shape)
