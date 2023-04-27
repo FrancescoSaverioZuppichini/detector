@@ -14,6 +14,7 @@ from torchvision.ops import StochasticDepth
 from ..types import Backbone
 from .common import QuickGELU
 from .functional import window_partition, window_unpartition
+from xformers.ops import memory_efficient_attention_forward, memory_efficient_attention_forward_requires_grad
 
 
 class LayerNorm(nn.LayerNorm):
@@ -36,10 +37,13 @@ class ResidualAttentionBlock(nn.Module):
         attn_mask: torch.Tensor = None,
         drop_rate: float = 0.0,
         window_size: float = 0.0,
+        qkv_bias: bool = True
     ):
         super().__init__()
         self.window_size = window_size
-        self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.n_head = n_head
+        self.qkv = torch.nn.Linear(d_model, d_model * 3, bias=qkv_bias)
+        # self.attn = nn.MultiheadAttention(d_model, n_head)
         self.ln_1 = nn.LayerNorm(d_model)
         self.drop_path = StochasticDepth(drop_rate, mode="batch")
         self.mlp = nn.Sequential(
@@ -63,11 +67,25 @@ class ResidualAttentionBlock(nn.Module):
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
     def forward(self, x: torch.Tensor):
+        b, n, d = x.shape
         shortcut = x
+        x = self.ln_1(x)
+        qkv = (
+            self.qkv(x)
+            .reshape(b, n, 3, self.n_head, d // self.n_head)
+            .permute(2, 0, 3, 1, 4)
+        )
+
+        qkv = qkv.flatten(1, 2)
+        q, k, v = qkv.unbind()
+
         if self.window_size > 0:
             # [NOTE] we need to rearrange everything here
             x, pad_hw, hw = window_partition(x, self.window_size)
-        x = self.attention(self.ln_1(x))
+
+        x = memory_efficient_attention_forward(q, k, v, op=None)
+        x = x.reshape(b, self.n_head, n, d // self.n_head).transpose(1, 2).reshape(b, n, d)
+        # x = self.attention(self.ln_1(x))
         if self.window_size > 0:
             x = window_unpartition(x, self.window_size, pad_hw, hw)
         x = shortcut + self.drop_path(x)
@@ -152,10 +170,10 @@ class ViT(Backbone):
         )  # shape = [*, grid ** 2 + 1, width]
         x = x + self.positional_embedding.to(x.dtype)
         x = self.ln_pre(x)
-
-        x = x.permute(1, 0, 2)  # NLD -> LND
+        # [NOTE] removed from original implementation
+        # x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
-        x = x.permute(1, 0, 2)  # LND -> NLD
+        # x = x.permute(1, 0, 2)  # LND -> NLD
 
         # [NOTE] changed from original implementation, we skip the cls token
         return [x[:, 1:, :]]
