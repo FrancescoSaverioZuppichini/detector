@@ -108,6 +108,7 @@ class MinCostMatcher(Matcher):
             # we have to send it to cpu to use scipy
             # [TODO] any better method? Decouple this to a strategy
             # [TODO] clamp for nans to zero
+            # cost_matrix[torch.isnan(cost_matrix)] = 1e5
             src_ind, tgt_ind = linear_sum_assignment(cost_matrix.cpu())
             indices.append((src_ind, tgt_ind))
 

@@ -16,8 +16,8 @@ class ViTAdapterForNeck(nn.Module):
             rearrange(
                 feature,
                 "b (h w) c -> b c h w",
-                h=self.vit.input_resolution // self.vit.patch_size,
-                w=self.vit.input_resolution // self.vit.patch_size,
+                h=self.vit.input_resolution[0] // self.vit.patch_size,
+                w=self.vit.input_resolution[1] // self.vit.patch_size,
             ).contiguous()
             for feature in features
         ]

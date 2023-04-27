@@ -9,6 +9,7 @@ from torch import nn
 from .loss import OneNetLoss
 from .matcher import MinCostMatcher
 from .model import YOTOForObjectDetection
+from torchvision.ops.boxes import box_convert
 
 
 class YOTOForObjectDetectionTask(pl.LightningModule):
@@ -27,13 +28,14 @@ class YOTOForObjectDetectionTask(pl.LightningModule):
 
     def training_step(self, batch: ObjectDetectionData, batch_idx: int):
         batch.images = batch.images.float().div_(255)
-        batch = batch.cuda()
+        batch.bboxes = box_convert(batch.bboxes, in_fmt='xywh', out_fmt='xyxy')
         if self.transform is not None:
             batch = self.transform(batch)
-        outs = self.model(batch.images)
-        loss = self.loss(*outs, batch.classes, batch.bboxes, batch.images_sizes, batch.mask_labels)
+        class_logits, boxes_preds  = self.model(batch.images)
+        class_logits, boxes_preds = class_logits.float(), boxes_preds.float()
+        loss = self.loss(class_logits, boxes_preds, batch.classes, batch.bboxes, batch.images_sizes, batch.mask_labels)
         # reduce loss by summing
-        tot_loss = torch.tensor(0.0)
+        tot_loss = torch.tensor(0.0, device=batch.images.device)
         for loss in loss.values():
             tot_loss += loss
         return tot_loss

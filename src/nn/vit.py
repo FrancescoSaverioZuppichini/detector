@@ -14,7 +14,6 @@ from torchvision.ops import StochasticDepth
 from ..types import Backbone
 from .common import QuickGELU
 from .functional import window_partition, window_unpartition
-from xformers.ops import memory_efficient_attention_forward, memory_efficient_attention_forward_requires_grad
 
 
 class LayerNorm(nn.LayerNorm):
@@ -37,13 +36,10 @@ class ResidualAttentionBlock(nn.Module):
         attn_mask: torch.Tensor = None,
         drop_rate: float = 0.0,
         window_size: float = 0.0,
-        qkv_bias: bool = True
     ):
         super().__init__()
         self.window_size = window_size
-        self.n_head = n_head
-        self.qkv = torch.nn.Linear(d_model, d_model * 3, bias=qkv_bias)
-        # self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.attn = nn.MultiheadAttention(d_model, n_head)
         self.ln_1 = nn.LayerNorm(d_model)
         self.drop_path = StochasticDepth(drop_rate, mode="batch")
         self.mlp = nn.Sequential(
@@ -67,25 +63,11 @@ class ResidualAttentionBlock(nn.Module):
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
     def forward(self, x: torch.Tensor):
-        b, n, d = x.shape
         shortcut = x
-        x = self.ln_1(x)
-        qkv = (
-            self.qkv(x)
-            .reshape(b, n, 3, self.n_head, d // self.n_head)
-            .permute(2, 0, 3, 1, 4)
-        )
-
-        qkv = qkv.flatten(1, 2)
-        q, k, v = qkv.unbind()
-
         if self.window_size > 0:
             # [NOTE] we need to rearrange everything here
             x, pad_hw, hw = window_partition(x, self.window_size)
-
-        x = memory_efficient_attention_forward(q, k, v, op=None)
-        x = x.reshape(b, self.n_head, n, d // self.n_head).transpose(1, 2).reshape(b, n, d)
-        # x = self.attention(self.ln_1(x))
+        x = self.attention(self.ln_1(x))
         if self.window_size > 0:
             x = window_unpartition(x, self.window_size, pad_hw, hw)
         x = shortcut + self.drop_path(x)
@@ -122,7 +104,7 @@ class Transformer(nn.Module):
 class ViT(Backbone):
     def __init__(
         self,
-        input_resolution: int,
+        input_resolution: List[int],
         patch_size: int,
         width: int,
         layers: int,
@@ -131,6 +113,7 @@ class ViT(Backbone):
         drop_path_rate: float = 0.0,
     ):
         super().__init__()
+        # [NOTE] it was self.input_resolution = input_resolution
         self.input_resolution = input_resolution
         self.patch_size = patch_size
         self.output_dim = output_dim
@@ -145,7 +128,7 @@ class ViT(Backbone):
         scale = width**-0.5
         self.class_embedding = nn.Parameter(scale * torch.randn(width))
         self.positional_embedding = nn.Parameter(
-            scale * torch.randn((input_resolution // patch_size) ** 2 + 1, width)
+            scale * torch.randn((input_resolution[0] // patch_size) * (input_resolution[1] // patch_size) + 1, width)
         )
         self.ln_pre = nn.LayerNorm(width)
 
@@ -170,24 +153,24 @@ class ViT(Backbone):
         )  # shape = [*, grid ** 2 + 1, width]
         x = x + self.positional_embedding.to(x.dtype)
         x = self.ln_pre(x)
-        # [NOTE] removed from original implementation
-        # x = x.permute(1, 0, 2)  # NLD -> LND
+
+        x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
-        # x = x.permute(1, 0, 2)  # LND -> NLD
+        x = x.permute(1, 0, 2)  # LND -> NLD
 
         # [NOTE] changed from original implementation, we skip the cls token
         return [x[:, 1:, :]]
 
     # Copied from https://github.com/facebookresearch/dino/blob/main/vision_transformer.py#L174  and adapter
     def interpolate_pos_encoding(self, w, h):
-        N = self.positional_embedding.shape[1] - 1
+        N = self.positional_embedding.shape[0] - 1
         if self.input_resolution[0] == w and self.input_resolution[1] == h:
             return self.positional_embedding
-        class_positional_embedding = self.positional_embedding[:, 0]
-        patch_positional_embedding = self.positional_embedding[:, 1:]
-        dim = self.positional_embedding.data.shape[-1]
-        w0 = w // self.patch_embed.patch_size
-        h0 = h // self.patch_embed.patch_size
+        class_positional_embedding = self.positional_embedding[0,...]
+        patch_positional_embedding = self.positional_embedding[1:,...]
+        dim = self.positional_embedding.shape[-1]
+        w0 = w // self.patch_size
+        h0 = h // self.patch_size
         # we add a small number to avoid floating point error in the interpolation
         # see discussion at https://github.com/facebookresearch/dino/issues/8
         w0, h0 = w0 + 0.1, h0 + 0.1
@@ -206,5 +189,5 @@ class ViT(Backbone):
             0, 2, 3, 1
         ).view(1, -1, dim)
         return torch.cat(
-            (class_positional_embedding.unsqueeze(0), patch_positional_embedding), dim=1
+            (class_positional_embedding[None, None, ...], patch_positional_embedding), dim=1
         )

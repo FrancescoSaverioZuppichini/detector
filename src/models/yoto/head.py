@@ -109,7 +109,7 @@ class Head(nn.Module):
 
             class_logits_all.append(class_logits)
             bboxes_predictions_all.append(bboxes_predictions)
-
+        # [NOTE] check this why permute
         class_logits_all = (
             torch.cat(class_logits_all, dim=-1).permute(0, 2, 1).contiguous()
         )
