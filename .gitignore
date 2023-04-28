@@ -1,7 +1,7 @@
 # lighting stuff
 lightning_logs/
 # my stuff
-datasets/
+./datasets/*
 memmap/
 benchmarks/plots/
 # Byte-compiled / optimized / DLL files
