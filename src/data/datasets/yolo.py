@@ -1,15 +1,15 @@
 from functools import reduce
 from pathlib import Path
-
-from torch import Tensor
 from typing import Tuple
 
 import torch
+import torch.nn.functional as F
+from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision.io import read_image
 
 from src.data.data import ObjectDetectionData
-import torch.nn.functional as F
+
 
 class YOLODataset(Dataset):
     def __init__(self, root: Path, image_format: str = "jpg", padding: bool = False):

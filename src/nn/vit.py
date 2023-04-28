@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor, nn
 from torchvision.ops import StochasticDepth
+from xformers.ops import memory_efficient_attention, MemoryEfficientAttentionFlashAttentionOp
 
 from ..types import Backbone
 from .common import QuickGELU
@@ -28,6 +29,74 @@ class LayerNorm(nn.LayerNorm):
         return ret.type(orig_type)
 
 
+class ResidualAttentionBlockXFormers(nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        n_head: int,
+        attn_mask: torch.Tensor = None,
+        drop_rate: float = 0.0,
+        window_size: float = 0.0,
+        qkv_bias: bool = True,
+    ):
+        super().__init__()
+        self.window_size = window_size
+        self.n_head = n_head
+        self.qkv = torch.nn.Linear(d_model, d_model * 3, bias=qkv_bias)
+        # self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.ln_1 = nn.LayerNorm(d_model)
+        self.drop_path = StochasticDepth(drop_rate, mode="batch")
+        self.mlp = nn.Sequential(
+            OrderedDict(
+                [
+                    ("c_fc", nn.Linear(d_model, d_model * 4)),
+                    ("gelu", QuickGELU()),
+                    ("c_proj", nn.Linear(d_model * 4, d_model)),
+                ]
+            )
+        )
+        self.ln_2 = nn.LayerNorm(d_model)
+        self.attn_mask = attn_mask
+
+    def attention(self, x: torch.Tensor):
+        self.attn_mask = (
+            self.attn_mask.to(dtype=x.dtype, device=x.device)
+            if self.attn_mask is not None
+            else None
+        )
+        return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
+
+    def forward(self, x: torch.Tensor):
+        b, n, d = x.shape
+        shortcut = x
+        x = self.ln_1(x)
+        qkv = (
+            self.qkv(x)
+            .reshape(b, n, 3, self.n_head, d // self.n_head)
+            .permute(2, 0, 3, 1, 4)
+        )
+
+        qkv = qkv.flatten(1, 2)
+        q, k, v = qkv.unbind()
+
+        if self.window_size > 0:
+            # [NOTE] we need to rearrange everything here
+            x, pad_hw, hw = window_partition(x, self.window_size)
+
+        x = memory_efficient_attention(q, k, v, op=None)
+        x = (
+            x.reshape(b, self.n_head, n, d // self.n_head)
+            .transpose(1, 2)
+            .reshape(b, n, d)
+        )
+        # x = self.attention(self.ln_1(x))
+        if self.window_size > 0:
+            x = window_unpartition(x, self.window_size, pad_hw, hw)
+        x = shortcut + self.drop_path(x)
+        x = x + self.drop_path(self.mlp(self.ln_2(x)))
+        return x
+
+
 class ResidualAttentionBlock(nn.Module):
     def __init__(
         self,
@@ -39,7 +108,7 @@ class ResidualAttentionBlock(nn.Module):
     ):
         super().__init__()
         self.window_size = window_size
-        self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.attn = nn.MultiheadAttention(d_model, n_head, batch_first=True)
         self.ln_1 = nn.LayerNorm(d_model)
         self.drop_path = StochasticDepth(drop_rate, mode="batch")
         self.mlp = nn.Sequential(
@@ -73,8 +142,7 @@ class ResidualAttentionBlock(nn.Module):
         x = shortcut + self.drop_path(x)
         x = x + self.drop_path(self.mlp(self.ln_2(x)))
         return x
-
-
+    
 class Transformer(nn.Module):
     def __init__(
         self,
@@ -91,7 +159,7 @@ class Transformer(nn.Module):
 
         self.resblocks = nn.Sequential(
             *[
-                ResidualAttentionBlock(width, heads, attn_mask, drop_rate=drop_rates[i])
+                ResidualAttentionBlockXFormers(width, heads, attn_mask, drop_rate=drop_rates[i])
                 for i in range(layers)
             ]
         )
@@ -128,8 +196,15 @@ class ViT(Backbone):
         scale = width**-0.5
         self.class_embedding = nn.Parameter(scale * torch.randn(width))
         self.positional_embedding = nn.Parameter(
-            scale * torch.randn((input_resolution[0] // patch_size) * (input_resolution[1] // patch_size) + 1, width)
+            scale
+            * torch.randn(
+                (input_resolution[0] // patch_size)
+                * (input_resolution[1] // patch_size)
+                + 1,
+                width,
+            )
         )
+
         self.ln_pre = nn.LayerNorm(width)
 
         self.transformer = Transformer(width, layers, heads)
@@ -153,10 +228,10 @@ class ViT(Backbone):
         )  # shape = [*, grid ** 2 + 1, width]
         x = x + self.positional_embedding.to(x.dtype)
         x = self.ln_pre(x)
-
-        x = x.permute(1, 0, 2)  # NLD -> LND
+        # [NOTE] removed from original implementation
+        # x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
-        x = x.permute(1, 0, 2)  # LND -> NLD
+        # x = x.permute(1, 0, 2)  # LND -> NLD
 
         # [NOTE] changed from original implementation, we skip the cls token
         return [x[:, 1:, :]]
@@ -166,8 +241,8 @@ class ViT(Backbone):
         N = self.positional_embedding.shape[0] - 1
         if self.input_resolution[0] == w and self.input_resolution[1] == h:
             return self.positional_embedding
-        class_positional_embedding = self.positional_embedding[0,...]
-        patch_positional_embedding = self.positional_embedding[1:,...]
+        class_positional_embedding = self.positional_embedding[0, ...]
+        patch_positional_embedding = self.positional_embedding[1:, ...]
         dim = self.positional_embedding.shape[-1]
         w0 = w // self.patch_size
         h0 = h // self.patch_size
@@ -189,5 +264,6 @@ class ViT(Backbone):
             0, 2, 3, 1
         ).view(1, -1, dim)
         return torch.cat(
-            (class_positional_embedding[None, None, ...], patch_positional_embedding), dim=1
+            (class_positional_embedding[None, None, ...], patch_positional_embedding),
+            dim=1,
         )

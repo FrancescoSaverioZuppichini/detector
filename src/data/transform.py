@@ -1,10 +1,10 @@
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
-from torch import nn
+from torch import Tensor, nn
 from torchvision.ops.boxes import box_convert
-from torch import Tensor
+
 from .data import ObjectDetectionData
 
 

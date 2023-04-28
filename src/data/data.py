@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from typing import Optional
+
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from tensordict.prototype import tensorclass
-import matplotlib.pyplot as plt
-from typing import Optional
-import numpy as np
 
 
 @tensorclass
